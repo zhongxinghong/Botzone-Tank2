@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:25
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-25 10:25:02
+# @Last Modified time: 2019-04-26 22:13:41
 
 import os
 import re
@@ -35,6 +35,7 @@ mkdir(BUILD_DIR)
 PYs = [
 
     "../core/const.py",
+    "../core/utils.py",
     "../core/stream.py",
     "../core/botzone.py",
     "../core/action.py",

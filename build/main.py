@@ -1,23 +1,88 @@
 # -*- coding: utf-8 -*-
 # @Author:   Rabbit
 # @Filename: main.py
-# @Date:     2019-04-25 10:24:31
+# @Date:     2019-04-27 04:57:37
 # @Description: Auto-built single-file Python script for Botzone/Tank2
 
 
 # BEGIN const.py #
 
+#-----------------#
+# Release Version #
+#-----------------#
+DEBUG_MODE        = False
+LONG_RUNNING_MODE = False
+
+#-------------#
+# Game Config #
+#-------------#
 MAP_HEIGHT     = 9
 MAP_WIDTH      = 9
 SIDE_COUNT     = 2
 TANKS_PER_SIDE = 2
 
+#-------------#
+# Game Status #
+#-------------#
 GAME_STATUS_NOT_OVER = -2
 GAME_STATUS_DRAW     = -1
-GAME_STATUS_BLUE_WON = 0
-GAME_STATUS_RED_WON  = 1
+GAME_STATUS_BLUE_WIN = 0
+GAME_STATUS_RED_WIN  = 1
+
+
+DIRECTIONS_UDLR = ( (0,-1), (0,1), (-1,0), (1,0) ) # 上下左右移动
 
 # END const.py #
+
+
+
+# BEGIN utils.py #
+
+class _Missing(object):
+    """
+    from werkzeug._internal
+    """
+
+    def __repr__(self):
+        return 'no value'
+
+    def __reduce__(self):
+        return '_missing'
+
+_MISSING = _Missing()
+
+
+class CachedProperty(property):
+    """
+    from werkzeug.utils
+    """
+
+    def __init__(self, func, name=None, doc=None):
+        self.__name__ = name or func.__name__
+        self.__module__ = func.__module__
+        self.__doc__ = doc or func.__doc__
+        self.func = func
+
+    def __set__(self, obj, value):
+        obj.__dict__[self.__name__] = value
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        value = obj.__dict__.get(self.__name__, _MISSING)
+        if value is _MISSING:
+            value = self.func(obj)
+            obj.__dict__[self.__name__] = value
+        return value
+
+    @staticmethod
+    def clean(obj, key):
+        """
+        清除缓存
+        """
+        obj.__dict__.pop(key, None)
+
+# END utils.py #
 
 
 
@@ -196,6 +261,25 @@ class Action(object):
         """
         return action1 % 4 == (action2 + 2) % 4
 
+    @staticmethod
+    def get_action(x1, y1, x2, y2):
+        """
+        获得 (x1, y1) -> (x2, y2) 的 move 行为值
+        """
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if dx == dy == 0:
+            return __class__.STAY
+
+        for idx, dxy in enumerate(zip(__class__.DIRECTION_OF_ACTION_X,
+                                      __class__.DIRECTION_OF_ACTION_Y)):
+            if (dx, dy) == dxy:
+                return idx
+        else:
+            raise Exception("can't move from (%s, %s) to (%s, %s) in one step"
+                             % (x1, y1, x2, y2) )
+
 # END action.py #
 
 
@@ -204,13 +288,23 @@ class Action(object):
 
 class Field(object):
 
-    DUMMY = -1
-    EMPTY = 0
-    BASE  = 1
-    BRICK = 2
-    STEEL = 3
-    WATER = 4
-    TANK  = 5
+
+    DUMMY     = -1
+    EMPTY     = 0
+    BRICK     = 1
+    STEEL     = 2
+    WATER     = 3
+
+    ## rule: BASE + 1 + side
+    BASE      = 4 # side = -1
+    BLUE_BASE = 5 # side = 0
+    RED_BASE  = 6 # side = 1
+
+    ## rule: TANK + 1 + side
+    TANK      = 7 # side = -1
+    BLUE_TANK = 8 # side = 0
+    RED_TANK  = 9 # side = 1
+
 
     def __init__(self, x, y, type):
         self.x = x
@@ -222,17 +316,19 @@ class Field(object):
     def coordinate(self):
         return (self.x, self.y)
 
+    @property
+    def xy(self):
+        return (self.x, self.y)
+
+    @property
+    def yx(self):
+        return (self.y, self.x)
+
 
 class EmptyField(Field):
 
     def __init__(self, x, y):
         super().__init__(x, y, Field.EMPTY)
-
-
-class BaseField(Field):
-
-    def __init__(self, x, y):
-        super().__init__(x, y, Field.BASE)
 
 
 class BrickField(Field):
@@ -251,6 +347,17 @@ class WaterField(Field):
 
     def __init__(self, x, y):
         super().__init__(x, y, Field.WATER)
+
+
+class BaseField(Field):
+
+    def __init__(self, x, y, side):
+        super().__init__(x, y, Field.BASE)
+        self._side = side
+
+    @property
+    def side(self):
+        return self._side
 
 
 class TankField(Field):
@@ -293,6 +400,10 @@ class Map(object):
     def height(self):
         return self._height
 
+    @property
+    def size(self):
+        return (self._width, self._height)
+
 
 class Tank2Map(Map):
 
@@ -307,6 +418,25 @@ class Tank2Map(Map):
     @property
     def tanks(self):
         return self._tanks
+
+    @CachedProperty
+    def matrix(self):
+        """
+        缓存 to_type_matrix 的值
+
+        WARNING:
+
+            - 因为 list 是可变对象，因此不要对返回值进行修改，以免缓存的属性值改变
+            - 如需修改，需要首先调用 np.copy(matrix) 获得一个副本，然后对副本进行修改
+        """
+        return self.to_type_matrix()
+
+    @CachedProperty
+    def matrix_T(self):
+        """
+        转置后的 matrix 熟悉
+        """
+        return self.matrix.T
 
 
     def _init_bases(self):
@@ -323,7 +453,7 @@ class Tank2Map(Map):
             (xc, y2), # side 2 红方
         ]
         for side, (x, y) in enumerate(basePoints):
-            base = self.create_base_field(x, y)
+            base = self.create_base_field(x, y, side)
             self._bases[side] = base
 
     def _init_tanks(self):
@@ -343,28 +473,35 @@ class Tank2Map(Map):
                 tanks[idx] = tank
 
     def reset(self):
-        width = self._width
-        height = self._height
+        """
+        重置地图
+        """
+        CachedProperty.clean(self, "matrix")   # 务必清空缓存
+        CachedProperty.clean(self, "matrix_T")
+        width, height = self.size
         self.__init__(width, height)
+
+    def get_fields(self, x, y):
+        """
+        获得 (x, y) 坐标下的 fields
+        """
+        if not self.in_map(x, y):
+            raise Exception("(%s, %s) is not in map" % (x, y) )
+        return self._content[y][x]
 
 
     def insert_field(self, field):
-        x, y = field.coordinate
+        x, y = field.xy
         self._content[y][x].append(field)
         field.destroyed = False
 
     def remove_field(self, field):
-        x, y = field.coordinate
+        x, y = field.xy
         self._content[y][x].remove(field)
         field.destroyed = True
 
     def create_empty_field(self, x, y):
         field = EmptyField(x, y)
-        self.insert_field(field)
-        return field
-
-    def create_base_field(self, x, y):
-        field = BaseField(x, y)
         self.insert_field(field)
         return field
 
@@ -380,6 +517,11 @@ class Tank2Map(Map):
 
     def create_water_field(self, x, y):
         field = WaterField(x, y)
+        self.insert_field(field)
+        return field
+
+    def create_base_field(self, x, y, side):
+        field = BaseField(x, y, side)
         self.insert_field(field)
         return field
 
@@ -404,7 +546,7 @@ class Tank2Map(Map):
         elif action == Action.STAY or Action.is_shoot(action):
             return True
         elif Action.is_move(action):
-            x, y = tank.coordinate
+            x, y = tank.xy
             _dx = Action.DIRECTION_OF_ACTION_X
             _dy = Action.DIRECTION_OF_ACTION_Y
             x += _dx[action]
@@ -434,11 +576,10 @@ class Tank2Map(Map):
         for aMyActions, anOppositeActions in zip(my_actions, opposite_actions):
 
             _currentTurn += 1
-            #print("Current Turn: %s" % _currentTurn)
-            #self.print_out()
-            #from pprint import pprint
-            #pprint(self.to_type_matrix())
-            #print()
+
+            if DEBUG_MODE:
+                print("Start Turn: %s" % _currentTurn)
+                self.print_out()
 
             _actions = [ None for _ in range(SIDE_COUNT) ]
 
@@ -483,7 +624,7 @@ class Tank2Map(Map):
                     if not tank.destroyed and Action.is_shoot(action):
                         tank.previousAction = action # 缓存本次射击行动
 
-                        x, y = tank.coordinate
+                        x, y = tank.xy
                         action %= 4 # 使之与 dx, dy 的 idx 对应
 
                         hasMultiTankWithMe = ( len( self._content[y][x] ) > 1 )
@@ -523,9 +664,23 @@ class Tank2Map(Map):
                 if not isinstance(field, SteelField):
                     self.remove_field(field)
 
+            if DEBUG_MODE:
+                print("End Turn: %s" % _currentTurn)
+                self.print_out()
+
 
     def get_game_result(self):
+        """
+        判断胜利方
 
+        Return:
+            - result   int   比赛结果
+
+                > GAME_STATUS_NOT_OVER   比赛尚未结束
+                > GAME_STATUS_DRAW       平局
+                > GAME_STATUS_BLUE_WIN   蓝方获胜
+                > GAME_STATUS_RED_WIN    红方获胜
+        """
         failed = [ False for _ in range(SIDE_COUNT) ] # 0 蓝方 1 红方
 
         for side in range(SIDE_COUNT):
@@ -543,9 +698,9 @@ class Tank2Map(Map):
         if failed[0] and failed[1]:
             return GAME_STATUS_DRAW
         elif not failed[0] and failed[1]:
-            return GAME_STATUS_BLUE_WON
+            return GAME_STATUS_BLUE_WIN
         elif failed[0] and not failed[1]:
-            return GAME_STATUS_RED_WON
+            return GAME_STATUS_RED_WIN
         else:
             return GAME_STATUS_NOT_OVER
 
@@ -554,25 +709,39 @@ class Tank2Map(Map):
         """
         转化成以 field.type 值表示的地图矩阵
 
-        Return：
-            - matrix   [[int]]   二维的 type 值矩阵
-        """
-        matrix = [ [ Field.DUMMY for x in range(self._width) ] for y in range(self._height) ]
+        Return:
+            - matrix   np.array( [[int]] )   二维的 type 值矩阵
 
-        for y in range(self._height):
-            for x in range(self._width):
+        WARNING:
+            - 矩阵的索引方法为 (y, x) ，实际使用时通常需要转置一下，使用 matrix.T
+        """
+        width, height = self.size
+        matrix = [ [ Field.DUMMY for x in range(width) ] for y in range(height) ]
+
+        for y in range(height):
+            for x in range(width):
                 fields = self._content[y][x]
                 if len(fields) == 0:
                     matrix[y][x] = Field.EMPTY
                 elif len(fields) > 2:
                     matrix[y][x] = Field.TANK # 重合视为一个坦克
                 else:
-                    matrix[y][x] = fields[0].type
+                    field = fields[0]
+                    if isinstance(field, (BaseField, TankField) ):
+                        matrix[y][x] = field.type + 1 + field.side # 遵循 Field 中常数定义的算法
+                    else:
+                        matrix[y][x] = field.type
 
-        return matrix
+        return np.array(matrix)
 
-    def print_out(self):
 
+    def print_out(self, compact=False):
+        """
+        [DEBUG] 输出整个地图
+
+        Input:
+            - compact   bool   是否以紧凑的形式输出
+        """
         EMPTY_SYMBOL      = "　"
         BASE_SYMBOL       = "基"
         BRICK_SYMBOL      = "土"
@@ -583,13 +752,17 @@ class Tank2Map(Map):
         MULTI_TANK_SYMBOL = "重"
         UNEXPECTED_SYMBOL = "？"
 
-        SPACE = "　"
-        CUT_OFF_RULE = "＝" * (self._width * 2 - 1)
+        SPACE = "　" if not compact else ""
+
+        _TEXT_WIDTH = (self._width * 2 - 1) if not compact else self._width
+        CUT_OFF_RULE = "＝" * _TEXT_WIDTH
 
         from functools import partial
         print_inline = partial(print, end=SPACE)
 
-        print("\n%s\n" % CUT_OFF_RULE)
+        print("\n%s" % CUT_OFF_RULE)
+        if not compact:
+            print("")
         for y in range(self._height):
             for x in range(self._width):
                 fields = self._content[y][x]
@@ -621,7 +794,7 @@ class Tank2Map(Map):
                         print_inline(UNEXPECTED_SYMBOL)
                 else:
                     print_inline(UNEXPECTED_SYMBOL)
-            print("\n")
+            print("\n" if not compact else "")
         print("%s\n" % CUT_OFF_RULE)
 
 # END map_.py #
@@ -630,7 +803,178 @@ class Tank2Map(Map):
 
 # BEGIN strategy.py #
 
+import numpy as np
+from collections import deque
 
+def _create_map_marked_matrix(map, fill=False, T=True):
+    """
+    创建地图的标记矩阵
+
+    Input:
+        - map    Tank2Map    游戏地图
+        - fill   object      初始填充值
+        - T      bool        是否转置
+    """
+    width, height = map.size
+    if T:
+        width, height = height, width
+    return [ [ fill for x in range(width) ] for y in range(height) ]
+
+def _find_nearest_route(start, end, map, side=-1,
+                        cannot_reach_type=[Field.STEEL, Field.WATER]):
+    """
+    寻找最短路径
+
+    Input:
+        - start   (int, int)    起始坐标 (x1, y2)
+        - end     (int, int)    终点坐标 (x2, y2)
+        - map     Tank2Map      游戏地图
+        - side    int           游戏方，默认为 -1，该值会影响对 base 是否可到达的判断
+                                如果为本方基地，则不可到达，如果为对方基地，则可以到达
+
+        - cannot_reach_type   [int]   除了基地以外，其他不可以到达的 field 类型
+
+    Return:
+        - route   [(int, int)]  包含 start 和 end 的从 start -> end
+                                的最短路径，坐标形式 (x, y)
+    """
+    map_   = map
+    matrix = map_.matrix_T
+    x1, y1 = start
+    x2, y2 = end
+
+    matrixCanReach = (matrix != Field.BASE + 1 + side) # BASE, 遵守 Field 中常数的定义规则
+    for t in cannot_reach_type:
+        matrixCanReach &= (matrix != t)
+
+    # struct Node:
+    # [
+    #     "xy":     (int, int)     目标节点
+    #     "parent": Node or None   父节点
+    # ]
+    startNode = [ (x1, y1), None ]
+    endNode   = [ (x2, y2), None ]    # 找到终点后设置 endNode 的父节点
+    tailNode  = [ (-1, -1), endNode ] # endNode 后的节点
+
+
+    queue = deque() # deque( [Node] )
+    marked = _create_map_marked_matrix(map_, fill=False, T=True)
+
+    def _enqueue_UDLR(node):
+        for dx, dy in DIRECTIONS_UDLR:
+            x, y = node[0]
+            x3 = x + dx
+            y3 = y + dy
+            if not map_.in_map(x3, y3) or not matrixCanReach[x3, y3]:
+                continue
+            nextNode = [ (x3, y3), node ]
+            queue.append(nextNode)
+
+
+    _enqueue_UDLR(startNode)
+
+    while len(queue) > 1:
+        node = queue.popleft()
+        x, y = node[0]
+
+        if marked[x][y]:
+            continue
+        marked[x][y] = True
+
+        if x == x2 and y == y2:  # 此时 node.xy == endNode.xy
+            endNode[1] = node[1]
+            break
+
+        _enqueue_UDLR(node)
+
+
+    route = []
+
+    node = tailNode
+    while True:
+        node = node[1]
+        if node is not None:
+            route.append(node[0])
+        else:
+            break
+
+    route.reverse()
+    return route
+
+
+class Strategy(object):
+    """
+    策略类 抽象基类
+
+    """
+    def __init__(self, tank, map, **kwargs):
+        """
+        Input:
+            - tank   TankField   需要做出决策的 tank
+            - map    Tank2Map    当前地图
+        """
+        self._tank = tank
+        self._map = map
+
+    def make_decision(self):
+        """
+        做出决策
+
+        Return:
+            - action   int   Action 类中定义的动作编号
+        """
+        raise NotImplementedError
+
+
+class MoveToWaterStrategy(Strategy):
+    """
+    [TEST] 移动向距离自己最近的水域
+    """
+
+    def __init__(self, tank, map, water_points=None):
+        """
+        可以传入 water_points 的坐标
+        """
+        super().__init__(tank, map)
+        self._waterPoints = water_points
+
+    @staticmethod
+    def find_water_points(map):
+        return np.argwhere(map.matrix_T == Field.WATER) # 转置为 xy 矩阵
+
+    def make_decision(self):
+        if self._waterPoints is None:
+            self._waterPoints = self.find_water_points(self._map)
+
+        waterPoints = self._waterPoints
+        xy = np.array( self._tank.xy )
+
+        _idx = np.square( xy - waterPoints ).sum(axis=1).argmin()
+        x2, y2 = nearestWaterPoint = waterPoints[_idx]
+
+        route = _find_nearest_route(
+                    self._tank.xy,
+                    nearestWaterPoint,
+                    self._map,
+                    cannot_reach_type=[Field.STEEL] ) # 水域允许到达
+
+        if DEBUG_MODE:
+            from pprint import pprint
+            self._map.print_out()
+            pprint(self._map.matrix)
+            print("")
+            pprint(route)
+
+        x1, y1 = self._tank.xy
+        if len(route) == 0:
+            raise Exception("can't reach (%s, %s)" % (x2, y2) )
+
+        if len(route) == 1: # 说明 start 和 end 相同
+            x3, y3 = nextPoint = route[0] # 返回 start/end
+        else:
+            x3, y3 = nextPoint = route[1] # 跳过 start
+
+        return Action.get_action(x1, y1, x3, y3)
 
 # END strategy.py #
 
@@ -644,25 +988,52 @@ if __name__ == '__main__':
 
     map_ = Tank2Map(MAP_WIDTH, MAP_HEIGHT)
 
-    terminal = Tank2Botzone(map_)
+    terminal = Tank2Botzone(map_, long_running=LONG_RUNNING_MODE)
 
     istream = BotzoneIstream()
     ostream = BotzoneOstream()
 
+    _dx = Action.DIRECTION_OF_ACTION_X
+    _dy = Action.DIRECTION_OF_ACTION_Y
+
     while True:
+
+        if LONG_RUNNING_MODE: # 这个模式下 map 对象会复用，首先需要重置
+            map_.reset()
 
         terminal.handle_input(stream=istream)
 
         side = terminal.mySide
         tanks = map_.tanks[side]
 
+        waterPoints = MoveToWaterStrategy.find_water_points(map_)
+
         actions = []
         for tank in tanks:
-            availableActions = [
+            '''availableActions = [
                 action for action in range(Action.STAY, Action.SHOOT_LEFT + 1)
                     if map_.is_valid_action(tank, action)
             ]
-            actions.append(random.choice(availableActions))
+            actions.append(random.choice(availableActions))'''
+            s = MoveToWaterStrategy(tank, map_, waterPoints)
+            action = s.make_decision()
+
+            if not map_.is_valid_action(tank, action): # 说明是墙或水
+                x, y = tank.xy
+                x += _dx[action]
+                y += _dy[action]
+                fields = map_.get_fields(x, y)
+                assert len(fields) > 0, "no fields in (%s, %s)" % (x, y)
+                field = fields[0]
+                if not isinstance(field, WaterField): # 说明是墙
+                    action += 4 # 射击，这个 action 一定成功，因为若上回合射击，这回合必定不会碰到墙
+                else: # 是水面
+                    if not Action.is_shoot(tank.previousAction): # 上回合未射击
+                        action += 4
+                    else: # 上回合射击
+                        action = Action.STAY # 如果游戏正常，则会停下，否则一开始会认为是合法，并继续移动
+
+            actions.append(action)
 
         terminal.make_output(actions, stream=ostream)
 

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-25 07:08:11
+# @Last Modified time: 2019-04-27 03:30:15
 
 __all__ = [
 
@@ -52,5 +52,24 @@ class Action(object):
         注： 此处不检查两个行为是否均与方向有关，即均处于 [0, 7] 范围内
         """
         return action1 % 4 == (action2 + 2) % 4
+
+    @staticmethod
+    def get_action(x1, y1, x2, y2):
+        """
+        获得 (x1, y1) -> (x2, y2) 的 move 行为值
+        """
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if dx == dy == 0:
+            return __class__.STAY
+
+        for idx, dxy in enumerate(zip(__class__.DIRECTION_OF_ACTION_X,
+                                      __class__.DIRECTION_OF_ACTION_Y)):
+            if (dx, dy) == dxy:
+                return idx
+        else:
+            raise Exception("can't move from (%s, %s) to (%s, %s) in one step"
+                             % (x1, y1, x2, y2) )
 
 #{ END }#

@@ -2,13 +2,19 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-25 10:06:52
+# @Last Modified time: 2019-04-27 04:55:04
 
 __all__ = [
 
     "Tank2Map",
 
     ]
+
+
+import numpy as np
+
+from .action import Action
+from .utils import CachedProperty
 
 from .field import (
 
@@ -22,17 +28,17 @@ from .field import (
 
 )
 
-from .action import Action
-
 from .const import (
+
+    DEBUG_MODE,
 
     SIDE_COUNT,
     TANKS_PER_SIDE,
 
     GAME_STATUS_NOT_OVER,
     GAME_STATUS_DRAW,
-    GAME_STATUS_BLUE_WON,
-    GAME_STATUS_RED_WON,
+    GAME_STATUS_BLUE_WIN,
+    GAME_STATUS_RED_WIN,
 
 )
 
@@ -57,6 +63,10 @@ class Map(object):
     def height(self):
         return self._height
 
+    @property
+    def size(self):
+        return (self._width, self._height)
+
 
 class Tank2Map(Map):
 
@@ -71,6 +81,25 @@ class Tank2Map(Map):
     @property
     def tanks(self):
         return self._tanks
+
+    @CachedProperty
+    def matrix(self):
+        """
+        缓存 to_type_matrix 的值
+
+        WARNING:
+
+            - 因为 list 是可变对象，因此不要对返回值进行修改，以免缓存的属性值改变
+            - 如需修改，需要首先调用 np.copy(matrix) 获得一个副本，然后对副本进行修改
+        """
+        return self.to_type_matrix()
+
+    @CachedProperty
+    def matrix_T(self):
+        """
+        转置后的 matrix 熟悉
+        """
+        return self.matrix.T
 
 
     def _init_bases(self):
@@ -87,7 +116,7 @@ class Tank2Map(Map):
             (xc, y2), # side 2 红方
         ]
         for side, (x, y) in enumerate(basePoints):
-            base = self.create_base_field(x, y)
+            base = self.create_base_field(x, y, side)
             self._bases[side] = base
 
     def _init_tanks(self):
@@ -107,28 +136,35 @@ class Tank2Map(Map):
                 tanks[idx] = tank
 
     def reset(self):
-        width = self._width
-        height = self._height
+        """
+        重置地图
+        """
+        CachedProperty.clean(self, "matrix")   # 务必清空缓存
+        CachedProperty.clean(self, "matrix_T")
+        width, height = self.size
         self.__init__(width, height)
+
+    def get_fields(self, x, y):
+        """
+        获得 (x, y) 坐标下的 fields
+        """
+        if not self.in_map(x, y):
+            raise Exception("(%s, %s) is not in map" % (x, y) )
+        return self._content[y][x]
 
 
     def insert_field(self, field):
-        x, y = field.coordinate
+        x, y = field.xy
         self._content[y][x].append(field)
         field.destroyed = False
 
     def remove_field(self, field):
-        x, y = field.coordinate
+        x, y = field.xy
         self._content[y][x].remove(field)
         field.destroyed = True
 
     def create_empty_field(self, x, y):
         field = EmptyField(x, y)
-        self.insert_field(field)
-        return field
-
-    def create_base_field(self, x, y):
-        field = BaseField(x, y)
         self.insert_field(field)
         return field
 
@@ -144,6 +180,11 @@ class Tank2Map(Map):
 
     def create_water_field(self, x, y):
         field = WaterField(x, y)
+        self.insert_field(field)
+        return field
+
+    def create_base_field(self, x, y, side):
+        field = BaseField(x, y, side)
         self.insert_field(field)
         return field
 
@@ -168,7 +209,7 @@ class Tank2Map(Map):
         elif action == Action.STAY or Action.is_shoot(action):
             return True
         elif Action.is_move(action):
-            x, y = tank.coordinate
+            x, y = tank.xy
             _dx = Action.DIRECTION_OF_ACTION_X
             _dy = Action.DIRECTION_OF_ACTION_Y
             x += _dx[action]
@@ -198,11 +239,10 @@ class Tank2Map(Map):
         for aMyActions, anOppositeActions in zip(my_actions, opposite_actions):
 
             _currentTurn += 1
-            #print("Current Turn: %s" % _currentTurn)
-            #self.print_out()
-            #from pprint import pprint
-            #pprint(self.to_type_matrix())
-            #print()
+
+            if DEBUG_MODE:
+                print("Start Turn: %s" % _currentTurn)
+                self.print_out()
 
             _actions = [ None for _ in range(SIDE_COUNT) ]
 
@@ -247,7 +287,7 @@ class Tank2Map(Map):
                     if not tank.destroyed and Action.is_shoot(action):
                         tank.previousAction = action # 缓存本次射击行动
 
-                        x, y = tank.coordinate
+                        x, y = tank.xy
                         action %= 4 # 使之与 dx, dy 的 idx 对应
 
                         hasMultiTankWithMe = ( len( self._content[y][x] ) > 1 )
@@ -287,9 +327,23 @@ class Tank2Map(Map):
                 if not isinstance(field, SteelField):
                     self.remove_field(field)
 
+            if DEBUG_MODE:
+                print("End Turn: %s" % _currentTurn)
+                self.print_out()
+
 
     def get_game_result(self):
+        """
+        判断胜利方
 
+        Return:
+            - result   int   比赛结果
+
+                > GAME_STATUS_NOT_OVER   比赛尚未结束
+                > GAME_STATUS_DRAW       平局
+                > GAME_STATUS_BLUE_WIN   蓝方获胜
+                > GAME_STATUS_RED_WIN    红方获胜
+        """
         failed = [ False for _ in range(SIDE_COUNT) ] # 0 蓝方 1 红方
 
         for side in range(SIDE_COUNT):
@@ -307,9 +361,9 @@ class Tank2Map(Map):
         if failed[0] and failed[1]:
             return GAME_STATUS_DRAW
         elif not failed[0] and failed[1]:
-            return GAME_STATUS_BLUE_WON
+            return GAME_STATUS_BLUE_WIN
         elif failed[0] and not failed[1]:
-            return GAME_STATUS_RED_WON
+            return GAME_STATUS_RED_WIN
         else:
             return GAME_STATUS_NOT_OVER
 
@@ -318,25 +372,39 @@ class Tank2Map(Map):
         """
         转化成以 field.type 值表示的地图矩阵
 
-        Return：
-            - matrix   [[int]]   二维的 type 值矩阵
-        """
-        matrix = [ [ Field.DUMMY for x in range(self._width) ] for y in range(self._height) ]
+        Return:
+            - matrix   np.array( [[int]] )   二维的 type 值矩阵
 
-        for y in range(self._height):
-            for x in range(self._width):
+        WARNING:
+            - 矩阵的索引方法为 (y, x) ，实际使用时通常需要转置一下，使用 matrix.T
+        """
+        width, height = self.size
+        matrix = [ [ Field.DUMMY for x in range(width) ] for y in range(height) ]
+
+        for y in range(height):
+            for x in range(width):
                 fields = self._content[y][x]
                 if len(fields) == 0:
                     matrix[y][x] = Field.EMPTY
                 elif len(fields) > 2:
                     matrix[y][x] = Field.TANK # 重合视为一个坦克
                 else:
-                    matrix[y][x] = fields[0].type
+                    field = fields[0]
+                    if isinstance(field, (BaseField, TankField) ):
+                        matrix[y][x] = field.type + 1 + field.side # 遵循 Field 中常数定义的算法
+                    else:
+                        matrix[y][x] = field.type
 
-        return matrix
+        return np.array(matrix)
 
-    def print_out(self):
 
+    def print_out(self, compact=False):
+        """
+        [DEBUG] 输出整个地图
+
+        Input:
+            - compact   bool   是否以紧凑的形式输出
+        """
         EMPTY_SYMBOL      = "　"
         BASE_SYMBOL       = "基"
         BRICK_SYMBOL      = "土"
@@ -347,13 +415,17 @@ class Tank2Map(Map):
         MULTI_TANK_SYMBOL = "重"
         UNEXPECTED_SYMBOL = "？"
 
-        SPACE = "　"
-        CUT_OFF_RULE = "＝" * (self._width * 2 - 1)
+        SPACE = "　" if not compact else ""
+
+        _TEXT_WIDTH = (self._width * 2 - 1) if not compact else self._width
+        CUT_OFF_RULE = "＝" * _TEXT_WIDTH
 
         from functools import partial
         print_inline = partial(print, end=SPACE)
 
-        print("\n%s\n" % CUT_OFF_RULE)
+        print("\n%s" % CUT_OFF_RULE)
+        if not compact:
+            print("")
         for y in range(self._height):
             for x in range(self._width):
                 fields = self._content[y][x]
@@ -385,7 +457,7 @@ class Tank2Map(Map):
                         print_inline(UNEXPECTED_SYMBOL)
                 else:
                     print_inline(UNEXPECTED_SYMBOL)
-            print("\n")
+            print("\n" if not compact else "")
         print("%s\n" % CUT_OFF_RULE)
 
 #{ END }#
