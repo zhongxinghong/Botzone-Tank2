@@ -2,7 +2,10 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 03:30:15
+# @Last Modified time: 2019-04-27 15:53:38
+"""
+行为类
+"""
 
 __all__ = [
 

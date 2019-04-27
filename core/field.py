@@ -2,7 +2,10 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:17:45
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 02:38:58
+# @Last Modified time: 2019-04-27 18:45:41
+"""
+地图区域类
+"""
 
 __all__ = [
 
@@ -30,12 +33,16 @@ class Field(object):
     STEEL     = 2
     WATER     = 3
 
-    ## rule: BASE + 1 + side
+    #-----------------------#
+    # rule: BASE + 1 + side #
+    #-----------------------#
     BASE      = 4 # side = -1
     BLUE_BASE = 5 # side = 0
     RED_BASE  = 6 # side = 1
 
-    ## rule: TANK + 1 + side
+    #-----------------------#
+    # rule: TANK + 1 + side #
+    #-----------------------#
     TANK      = 7 # side = -1
     BLUE_TANK = 8 # side = 0
     RED_TANK  = 9 # side = 1
@@ -58,6 +65,10 @@ class Field(object):
     @property
     def yx(self):
         return (self.y, self.x)
+
+    def __repr__(self):
+        return "%s(%d, %d)" % (
+            self.__class__.__name__, self.x, self.y)
 
 
 class EmptyField(Field):
@@ -94,6 +105,10 @@ class BaseField(Field):
     def side(self):
         return self._side
 
+    def __repr__(self):
+        return "%s(%d, %d, side: %d)" % (
+            self.__class__.__name__, self.x, self.y, self._side)
+
 
 class TankField(Field):
 
@@ -110,5 +125,9 @@ class TankField(Field):
     @property
     def id(self):
         return self._id
+
+    def __repr__(self):
+        return "%s(%d, %d, side: %d, id: %d)" % (
+            self.__class__.__name__, self.x, self.y, self._side, self._id)
 
 #{ END }#

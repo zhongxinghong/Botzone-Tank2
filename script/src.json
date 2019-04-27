@@ -1,0 +1,57 @@
+[
+{
+    "package": "",
+    "file": "../core/const.py"
+},
+{
+    "package": "",
+    "file": "../core/const.py"
+},
+{
+    "package": "",
+    "file": "../core/global_.py"
+},
+{
+    "package": "",
+    "file": "../core/utils.py"
+},
+{
+    "package": "",
+    "file": "../core/action.py"
+},
+{
+    "package": "",
+    "file": "../core/field.py"
+},
+{
+    "package": "",
+    "file": "../core/map_.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/_utils.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/abstract.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/random_action.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/move_to_water.py"
+},
+{
+    "package": "",
+    "file": "../core/stream.py"
+},
+{
+    "package": "",
+    "file": "../core/botzone.py"
+},
+{
+    "package": "",
+    "file": "../main.py"
+}]

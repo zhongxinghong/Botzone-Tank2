@@ -2,7 +2,10 @@
 # @Author: Administrator
 # @Date:   2019-04-24 21:18:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 04:15:52
+# @Last Modified time: 2019-04-27 19:00:08
+"""
+全局常数
+"""
 
 #{ BEGIN }#
 
@@ -29,7 +32,7 @@ GAME_STATUS_BLUE_WIN = 0
 GAME_STATUS_RED_WIN  = 1
 
 
-DIRECTIONS_UDLR = ( (0,-1), (0,1), (-1,0), (1,0) ) # 上下左右移动
+DIRECTIONS_UDLR = ( (0,-1), (0,1), (-1,0), (1,0) ) # 上下左右
 
 #{ END }#
 

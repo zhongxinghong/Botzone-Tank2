@@ -2,18 +2,33 @@
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 01:48:29
+# @Last Modified time: 2019-04-27 18:59:45
+"""
+工具类
+"""
 
 __all__ = [
 
+    "debug_print",
+    "debug_pprint",
+
     "CachedProperty",
+    "Singleton",
 
     ]
 
-from .const import LONG_RUNNING_MODE
-
+from .const import DEBUG_MODE, LONG_RUNNING_MODE
+from .global_ import pprint
 
 #{ BEGIN }#
+
+if DEBUG_MODE:
+    debug_print  = print
+    debug_pprint = pprint
+else:
+    debug_print  = lambda *args, **kwargs: None
+    debug_pprint = debug_print
+
 
 class _Missing(object):
     """
@@ -59,5 +74,17 @@ class CachedProperty(property):
         """
         obj.__dict__.pop(key, None)
 
+
+class Singleton(type):
+    """
+    Singleton Metaclass
+    @link https://github.com/jhao104/proxy_pool/blob/428359c8dada998481f038dbdc8d3923e5850c0e/Util/utilClass.py
+    """
+    _instance = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instance:
+            cls._instance[cls] = super(Singleton, cls).__call__(*args)
+        return cls._instance[cls]
 
 #{ END }#

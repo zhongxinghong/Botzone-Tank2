@@ -2,7 +2,12 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:33:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-26 23:52:43
+# @Last Modified time: 2019-04-27 18:05:19
+"""
+Botzone 终端类
+
+处理输入输出信息
+"""
 
 __all__ = [
 
@@ -10,11 +15,10 @@ __all__ = [
 
     ]
 
+from .global_ import json, sys
+from .utils import Singleton
+
 #{ BEGIN }#
-
-import json
-import sys
-
 
 class Botzone(object):
 
@@ -47,10 +51,10 @@ class Botzone(object):
         Input：
             - stream       TextIOWrapper   输出流对象，必须实现 write 方法
             - response     dict            Bot 此回合的输出信息
-            - debug        str             调试信息，将被写入log，最大长度为1KB
+            - debug        dict/str        调试信息，将被写入log，最大长度为1KB
             - data         dict            Bot 此回合的保存信息，将在下回合输入
             - globaldata   dict            Bot 的全局保存信息，将会在下回合输入，
-                                             对局结束后也会保留，下次对局可以继续利用
+                                           对局结束后也会保留，下次对局可以继续利用
         """
         stream.write(json.dumps({
             "response": response,
@@ -64,7 +68,7 @@ class Botzone(object):
 
 
 
-class Tank2Botzone(Botzone):
+class Tank2Botzone(Botzone, metaclass=Singleton):
 
     def __init__(self, map, long_running=False):
         super().__init__(long_running)
@@ -115,10 +119,8 @@ class Tank2Botzone(Botzone):
         self._map.do_actions(self._mySide, self._responses, self._requests)
 
 
-    def make_output(self, actions, stream=sys.stdout, **kwargs):
-        debug = kwargs.get("debug", None)
-        data = kwargs.get("data", None)
-        globalData = kwargs.get("globaldata", None)
-        super().make_output(stream, actions, debug, data, globalData)
+    def make_output(self, actions, stream=sys.stdout,
+                    debug=None, data=None, globaldata=None):
+        super().make_output(stream, actions, debug, data, globaldata)
 
 #{ END }#
