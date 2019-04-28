@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 19:18:48
+# @Last Modified time: 2019-04-28 09:54:14
 """
 [TEST] 随机行为
 
@@ -23,11 +23,13 @@ from ..global_ import random
 from ..utils import debug_print
 from ..action import Action
 from ..field import BaseField, TankField
-from .abstract import Strategy
+from ._utils import get_destroyed_fields
+from .abstract import SingleTankStrategy
+
 
 #{ BEGIN }#
 
-class RandomActionStrategy(Strategy):
+class RandomActionStrategy(SingleTankStrategy):
 
     def make_decision(self):
 
@@ -42,7 +44,7 @@ class RandomActionStrategy(Strategy):
             if not map_.is_valid_action(tank, action):
                 continue
             elif Action.is_shoot(action):
-                destroyedFields = map_.get_destroyed_fields(tank, action)
+                destroyedFields = get_destroyed_fields(tank, action, map_)
                 # debug_print("Destroyed Fields:", destroyedFields)
                 if len(destroyedFields) == 1:
                     field = destroyedFields[0]

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @Author:   Rabbit
 # @Filename: main.py
-# @Date:     2019-04-27 19:09:17
+# @Date:     2019-04-28 15:51:33
 # @Description: Auto-built single-file Python script for Botzone/Tank2
 
 
@@ -30,7 +30,7 @@ GAME_STATUS_BLUE_WIN = 0
 GAME_STATUS_RED_WIN  = 1
 
 
-DIRECTIONS_UDLR = ( (0,-1), (0,1), (-1,0), (1,0) ) # 上下左右
+DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0)  ) # 上右下左，与行为一致
 
 #{ END 'const.py' }#
 
@@ -61,7 +61,7 @@ GAME_STATUS_BLUE_WIN = 0
 GAME_STATUS_RED_WIN  = 1
 
 
-DIRECTIONS_UDLR = ( (0,-1), (0,1), (-1,0), (1,0) ) # 上下左右
+DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0)  ) # 上右下左，与行为一致
 
 #{ END 'const.py' }#
 
@@ -157,7 +157,7 @@ class Singleton(type):
 
 class Action(object):
 
-    DUMMY       = -3
+    DUMMY       = -3 # 额外添加的 空行为
     INVALID     = -2
     STAY        = -1
     MOVE_UP     = 0
@@ -172,6 +172,13 @@ class Action(object):
     # 根据 action 的值判断移动方向和射击方向
     DIRECTION_OF_ACTION_X  = (  0, 1, 0, -1 )
     DIRECTION_OF_ACTION_Y  = ( -1, 0, 1,  0 )
+
+    @staticmethod
+    def is_valid(action):
+        """
+        判断是否为有效行为
+        """
+        return -2 < action <= 7
 
     @staticmethod
     def is_move(action):
@@ -355,6 +362,21 @@ class Map(object):
     def size(self):
         return (self._width, self._height)
 
+    def in_map(self, x, y):
+        """
+        判断 (x, y) 坐标是否位于地图内
+        """
+        return 0 <= x < self._width and 0 <= y < self._height
+
+    def __getitem__(self, xy):
+        """
+        获得 xy: (x, y) 的内容
+        """
+        x, y = xy
+        if not self.in_map(x, y):
+            raise Exception("(%s, %s) is not in map" % (x, y) )
+        return self._content[y][x]
+
 
 class Tank2Map(Map, metaclass=Singleton):
 
@@ -369,6 +391,10 @@ class Tank2Map(Map, metaclass=Singleton):
     @property
     def tanks(self):
         return self._tanks
+
+    @property
+    def bases(self):
+        return self._bases
 
     @CachedProperty
     def matrix(self):
@@ -474,14 +500,6 @@ class Tank2Map(Map, metaclass=Singleton):
         return field
 
 
-    def get_fields(self, x, y):
-        """
-        获得 (x, y) 坐标下的 fields
-        """
-        if not self.in_map(x, y):
-            raise Exception("(%s, %s) is not in map" % (x, y) )
-        return self._content[y][x]
-
     def to_type_matrix(self):
         """
         转化成以 field.type 值表示的地图矩阵
@@ -511,12 +529,6 @@ class Tank2Map(Map, metaclass=Singleton):
 
         return np.array(matrix)
 
-    def in_map(self, x, y):
-        """
-        判断 (x, y) 坐标是否位于地图内
-        """
-        return 0 <= x < self._width and 0 <= y < self._height
-
     def is_valid_move_action(self, tank, action):
         """
         判断是否为合法的移动行为
@@ -524,7 +536,7 @@ class Tank2Map(Map, metaclass=Singleton):
         assert Action.is_move(action), "action %s is not a move-action" % action
         _dx = Action.DIRECTION_OF_ACTION_X
         _dy = Action.DIRECTION_OF_ACTION_Y
-        _TYPE_CAN_MOVE_TO = ( Field.EMPTY, Field.DUMMY )
+        _TYPE_CAN_MOVE_TO = ( Field.DUMMY, Field.EMPTY ) # 遇到坦克不能移动！
         x, y = tank.xy
         x += _dx[action]
         y += _dy[action]
@@ -543,8 +555,6 @@ class Tank2Map(Map, metaclass=Singleton):
         """
         判断是否为合法的设计行为
         """
-        debug_print(tank.__dict__)
-        debug_print(tank.previousAction)
         assert Action.is_shoot(action), "action %s is not a shoot-action" % action
         return not Action.is_shoot(tank.previousAction) # 只要不连续两回合射击都合理
 
@@ -552,7 +562,6 @@ class Tank2Map(Map, metaclass=Singleton):
         """
         判断是否为合法行为
         """
-        debug_print("validate action, tank: %s, action: %s" % (tank, action) )
         if action == Action.INVALID:
             return False
         elif action == Action.STAY:
@@ -563,55 +572,6 @@ class Tank2Map(Map, metaclass=Singleton):
             return self.is_valid_shoot_action(tank, action)
         else: # 未知的行为
             raise Exception("unexpected action %s" % action)
-
-
-    def get_destroyed_fields(self, tank, action):
-        """
-        下一回合某坦克执行一个射击行为后，将会摧毁的 fields
-
-        用于单向分析 action 所能造成的影响，不考虑对方下一回合的决策
-
-        - 不判断自身是否与其他 tank 重叠
-        - 如果对方是 tank 认为对方下回合不开炮
-
-        Return:
-            - fields   [Field]/[]   被摧毁的 fields
-                                    如果没有对象被摧毁，则返回空列表
-        """
-        assert self.is_valid_shoot_action(tank, action)
-        x, y = tank.xy
-
-        _dx = Action.DIRECTION_OF_ACTION_X
-        _dy = Action.DIRECTION_OF_ACTION_Y
-
-        action %= 4 # 使之与 dx, dy 的 idx 对应
-
-        while True: # 查找该行/列上是否有可以被摧毁的对象
-
-            x += _dx[action]
-            y += _dy[action]
-
-            if not self.in_map(x, y):
-                break
-
-            currentFields = self._content[y][x]
-
-            if len(currentFields) == 0: # 没有对象
-                continue
-            elif len(currentFields) > 1: # 均为坦克
-                return currentFields
-            else: # len == 1
-                field = currentFields[0]
-                if isinstance(field, EmptyField): # 空对象
-                    continue
-                elif isinstance(field, WaterField): # 忽视水路
-                    continue
-                elif isinstance(field, SteelField): # 钢墙不可摧毁
-                    return []
-                else:
-                    return currentFields
-
-        return [] # 没有任何对象被摧毁
 
 
     def do_actions(self, my_side, my_actions, opposite_actions):
@@ -823,10 +783,61 @@ class Tank2Map(Map, metaclass=Singleton):
 
 #{ BEGIN 'strategy/_utils.py' }#
 
-def _find_shortest_route(start, end, matrix_T, side=-1,
-                         cannot_reach_type=[Field.STEEL, Field.WATER]):
+def get_destroyed_fields(tank, action, map):
+    """
+    下一回合某坦克执行一个射击行为后，将会摧毁的 fields
+
+    用于单向分析 action 所能造成的影响，不考虑对方下一回合的决策
+
+    - 不判断自身是否与其他 tank 重叠
+    - 如果对方是 tank 认为对方下回合不开炮
+
+    Return:
+        - fields   [Field]/[]   被摧毁的 fields
+                                如果没有对象被摧毁，则返回空列表
+    """
+    map_ = map
+    assert map_.is_valid_shoot_action(tank, action)
+    x, y = tank.xy
+
+    _dx = Action.DIRECTION_OF_ACTION_X
+    _dy = Action.DIRECTION_OF_ACTION_Y
+
+    action %= 4 # 使之与 dx, dy 的 idx 对应
+
+    while True: # 查找该行/列上是否有可以被摧毁的对象
+
+        x += _dx[action]
+        y += _dy[action]
+
+        if not map_.in_map(x, y):
+            break
+
+        currentFields = map_[x, y]
+        if len(currentFields) == 0: # 没有对象
+            continue
+        elif len(currentFields) > 1: # 均为坦克
+            return currentFields
+        else: # len == 1
+            field = currentFields[0]
+            if isinstance(field, EmptyField): # 空对象
+                continue
+            elif isinstance(field, WaterField): # 忽视水路
+                continue
+            elif isinstance(field, SteelField): # 钢墙不可摧毁
+                return []
+            else:
+                return currentFields
+
+    return [] # 没有任何对象被摧毁
+
+
+def find_shortest_route(start, end, matrix_T, side=-1,
+                        cannot_reach_type=[Field.STEEL, Field.WATER]):
     """
     BFS 寻找最短路径
+
+    特点：土墙当成两格
 
     Input:
         - start     (int, int)           起始坐标 (x1, y2)
@@ -853,10 +864,11 @@ def _find_shortest_route(start, end, matrix_T, side=-1,
     # [
     #     "xy":     (int, int)     目标节点
     #     "parent": Node or None   父节点
+    #     "weight": int ( >= 1 )   这个节点的权重
     # ]
-    startNode = [ (x1, y1), None ]
-    endNode   = [ (x2, y2), None ]    # 找到终点后设置 endNode 的父节点
-    tailNode  = [ (-1, -1), endNode ] # endNode 后的节点
+    startNode = [ (x1, y1), None, 1 ] # tank 块，权重为 1
+    endNode   = [ (x2, y2), None, 1 ] # 找到终点后设置 endNode 的父节点
+    tailNode  = [ (-1, -1), endNode, -1 ] # endNode 后的节点
 
     queue = deque() # deque( [Node] )
     marked = np.zeros_like(matrix, dtype=np.bool8)
@@ -866,21 +878,30 @@ def _find_shortest_route(start, end, matrix_T, side=-1,
     def _in_matrix(x, y):
         return 0 <= x < width and 0 <= y < height
 
-    def _enqueue_UDLR(node):
-        for dx, dy in DIRECTIONS_UDLR:
+    def _enqueue_URDL(node):
+        for dx, dy in DIRECTIONS_URDL:
             x, y = node[0]
             x3 = x + dx
             y3 = y + dy
             if not _in_matrix(x3, y3) or not matrixCanReach[x3, y3]:
                 continue
-            nextNode = [ (x3, y3), node ]
+            weight = 1 # 默认权重
+            if matrix[x3, y3] == Field.BRICK: # 墙算作 2 个节点
+                weight = 2
+            nextNode = [ (x3, y3), node, weight ]
             queue.append(nextNode)
 
 
-    _enqueue_UDLR(startNode)
+    _enqueue_URDL(startNode)
 
-    while len(queue) > 1:
+    while len(queue) > 0:
         node = queue.popleft()
+
+        if node[2] > 1:  # 如果权重大于 1 则减小权重 1 ，直到权重为 1 才算真正到达
+            node[2] -= 1
+            queue.append(node) # 相当于走到的下一个节点
+            continue
+
         x, y = node[0]
 
         if marked[x, y]:
@@ -891,7 +912,7 @@ def _find_shortest_route(start, end, matrix_T, side=-1,
             endNode[1] = node[1]
             break
 
-        _enqueue_UDLR(node)
+        _enqueue_URDL(node)
 
 
     route = []
@@ -915,6 +936,18 @@ def _find_shortest_route(start, end, matrix_T, side=-1,
 
 class Strategy(object):
 
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def make_decision(self, *args, **kwargs):
+        raise NotImplementedError
+
+
+class SingleTankStrategy(Strategy):
+    """
+    不考虑其他 tank 的情况，某一 tank 单独决策
+
+    """
     def __init__(self, tank, map, **kwargs):
         """
         Input:
@@ -924,12 +957,13 @@ class Strategy(object):
         self._tank = tank
         self._map = map
 
-    def make_decision(self):
+    def make_decision(self, *args, **kwargs):
         """
-        做出决策
+        该 tank 单独做出决策
 
         Return:
             - action   int   Action 类中定义的动作编号
+                             如果判断到在这种情况下不适合使用该策略，则返回 Action.INVALID
         """
         raise NotImplementedError
 
@@ -939,13 +973,13 @@ class Strategy(object):
 
 #{ BEGIN 'strategy/random_action.py' }#
 
-class RandomActionStrategy(Strategy):
+class RandomActionStrategy(SingleTankStrategy):
 
     def make_decision(self):
 
         tank = self._tank
         map_ = self._map
-        debug_print("RandomAction decision, tank %s" % tank)
+        # debug_print("RandomAction decision, tank %s" % tank)
 
         availableActions = []
 
@@ -954,18 +988,18 @@ class RandomActionStrategy(Strategy):
             if not map_.is_valid_action(tank, action):
                 continue
             elif Action.is_shoot(action):
-                destroyedFields = map_.get_destroyed_fields(tank, action)
-                debug_print("Destroyed Fields:", destroyedFields)
+                destroyedFields = get_destroyed_fields(tank, action, map_)
+                # debug_print("Destroyed Fields:", destroyedFields)
                 if len(destroyedFields) == 1:
                     field = destroyedFields[0]
                     if isinstance(field, BaseField) and field.side == tank.side:
-                        continue # 保证不摧毁己方的基地
+                        continue
                     elif isinstance(field, TankField) and field.side == tank.side:
-                        continue # 保证不摧毁队友，不过需要队友和敌人不重合
+                        continue
 
             availableActions.append(action)
 
-        debug_print("Available actions: %s\n" % availableActions)
+        # debug_print("Available actions: %s\n" % availableActions)
         return random.choice(availableActions)
 
 #{ END 'strategy/random_action.py' }#
@@ -974,7 +1008,7 @@ class RandomActionStrategy(Strategy):
 
 #{ BEGIN 'strategy/move_to_water.py' }#
 
-class MoveToWaterStrategy(Strategy):
+class MoveToWaterStrategy(SingleTankStrategy):
 
     def __init__(self, tank, map, water_points=None):
         """
@@ -1007,7 +1041,7 @@ class MoveToWaterStrategy(Strategy):
         _idx = np.square( xy - waterPoints ).sum(axis=1).argmin()
         x2, y2 = nearestWaterPoint = waterPoints[_idx]
 
-        route = _find_shortest_route(
+        route = find_shortest_route(
                     tank.xy,
                     nearestWaterPoint,
                     matrix_T,
@@ -1034,7 +1068,7 @@ class MoveToWaterStrategy(Strategy):
             x, y = tank.xy
             x += _dx[action]
             y += _dy[action]
-            fields = map_.get_fields(x, y)
+            fields = map_[x, y]
             assert len(fields) > 0, "except WATER or BRICK in (%s, %s)" % (x, y)
             field = fields[0]
             action += 4 # 尝试射击
@@ -1049,6 +1083,444 @@ class MoveToWaterStrategy(Strategy):
         return action
 
 #{ END 'strategy/move_to_water.py' }#
+
+
+
+#{ BEGIN 'strategy/march_into_enemy_base.py' }#
+
+class MarchIntoEnemyBaseStrategy(SingleTankStrategy):
+
+    def make_decision(self):
+
+        tank = self._tank
+        map_ = self._map
+        matrix_T = map_.matrix_T
+
+        _dx = Action.DIRECTION_OF_ACTION_X
+        _dy = Action.DIRECTION_OF_ACTION_Y
+
+        oppSide = 1 - tank.side
+        oppBase = map_.bases[oppSide]
+
+        route = find_shortest_route(tank.xy, oppBase.xy, matrix_T, side=tank.side)
+
+        '''if DEBUG_MODE:
+            map_.print_out()
+            # pprint(self._map.matrix)
+            print(route)'''
+
+        if len(route) == 1:    # 说明 start 和 end 相同
+            return Action.STAY # 停留不动
+
+        x1, y1 = tank.xy
+        x3, y3 = route[1] # 跳过 start
+        action = Action.get_action(x1, y1, x3, y3)
+
+        ## 优先移动 ##
+        if map_.is_valid_move_action(tank, action):
+
+            # 但是，如果正前方就是基地，则不移动，只射击
+            hasEnemyBaseInFront = False
+            x, y = tank.xy
+            while True:
+                x += _dx[action]
+                y += _dy[action]
+                if not map_.in_map(x, y):
+                    break
+                currentFields = map_[x, y]
+
+                foundSteelField = False
+                for field in currentFields:
+                    if isinstance(field, SteelField):
+                        foundSteelField = True
+                        break
+                    elif field is oppBase: # 是敌方
+                        hasEnemyBaseInFront = True
+                        break
+                    else: # 继续寻找
+                        continue
+                if foundSteelField: # 钢墙不能击穿，因此该方向不在往下找
+                    break
+
+            if hasEnemyBaseInFront: # 地方基地在前方，且没有钢墙阻拦
+                if map_.is_valid_shoot_action(tank, action + 4): # 如果自己可以射击
+                    action += 4
+                    destroyedFields = get_destroyed_fields(tank, action, map_)
+                    for field in destroyedFields: # 为了防止射到队友
+                        if isinstance(field, TankField) and field.side == tank.side:
+                            return Action.STAY # 原地不动
+                    return action # 否则射击
+                else:
+                    return Action.STAY # 不能射击，则等待
+            return action # 否则，正常移动
+
+
+        ## 遇到墙/敌方基地/坦克 ##
+        action += 4 # 尝试射击
+        if map_.is_valid_shoot_action(tank, action):
+            destroyedFields = get_destroyed_fields(tank, action, map_)
+            # 仅仅需要防止射到自己队友
+            if len(destroyedFields) == 1:
+                field = destroyedFields[0]
+                if isinstance(field, TankField) and field.side == tank.side:
+                    # TODO: 这种情况下可能会出现两架坦克互相等待的情况？
+                    return Action.STAY
+            return action # 到此说明可以射击
+
+        return Action.STAY # 不能射击，只好等待
+
+#{ END 'strategy/march_into_enemy_base.py' }#
+
+
+
+#{ BEGIN 'strategy/skirmish.py' }#
+
+class SkirmishStrategy(SingleTankStrategy):
+
+    def make_decision(self):
+
+        tank = self._tank
+        map_ = self._map
+        oppSide = 1 - tank.side
+
+        ## 如果与敌方重叠 ##
+        onSiteFields = map_[tank.xy]
+        if len(onSiteFields) > 1:
+            for field in onSiteFields: #　field 必定是 TankField
+                assert isinstance(field, TankField), "unexpected field %r" % field
+                if field.side == tank.side: # 是自己或者队友
+                    continue
+                else:
+                    oppTank = field
+                    if Action.is_shoot(oppTank.previousAction):
+                        return Action.INVALID # 敌方上回合射击，说明下回合是安全的
+                    else:
+                        # TODO: 但是等待有可能让别人直接跑走，是否可以考虑回头打？
+                        return Action.STAY # 敌人这回合可以开炮，等待是最安全的做法
+
+
+        shouldShoot = False
+        shouldShootDxDy = (0, 0) # 记录应该往哪个方向射击
+        oppTank = None
+
+        ## 考虑四周是否有敌军 ##
+        for dx, dy in DIRECTIONS_URDL:
+            if shouldShoot: # 已经发现需要射击的情况
+                break
+            x, y = tank.xy
+            while True:
+                x += dx
+                y += dy
+                if not map_.in_map(x, y):
+                    break
+                currentFields = map_[x, y]
+                if len(currentFields) == 0: # 没有对象
+                    continue
+                elif len(currentFields) > 1: # 多辆坦克，准备射击
+                    # TODO: 是否应该射掉队友？
+                    for field in currentFields:
+                        assert isinstance(field, TankField), "unexpected field %r" % field
+                        if field.side == oppSide:
+                            oppTank = field
+                            break
+                    else:
+                        raise Exception("???") # 这种情况不应该出现
+                    shouldShoot = True
+                    shouldShootDxDy = (dx, dy)
+                    break
+                else: # len == 1
+                    field = currentFields[0]
+                    if isinstance(field, (EmptyField, WaterField) ):
+                        continue
+                    elif not isinstance(field, TankField): # 说明这个方向上没有敌人
+                        break
+                    elif field.side != tank.side: # 遇到了敌人，准备射击
+                        oppTank = field
+                        shouldShoot = True
+                        shouldShootDxDy = (dx, dy)
+                        break
+                    else: # 遇到了队友 ...
+                        break # 继续判断其他方向是否有敌军
+
+        ## 尝试射击 ##
+        if shouldShoot:
+            x, y = tank.xy
+            dx, dy = shouldShootDxDy
+            action = Action.get_action(x, y, x+dx, y+dy) + 4  # 通过 move-action 间接得到 shoot-action
+            if map_.is_valid_shoot_action(tank, action):
+                return action # 可以射击
+            else: # 不能射击 ...
+                if not Action.is_shoot(oppTank.previousAction): #　并且敌方有炮弹
+                    # 尝试闪避
+                    _ineffectiveAction = action - 4 # 闪避后应当尝试离开射击方向所在直线，否则是无效的
+                    for _action in range(Action.MOVE_UP, Action.MOVE_LEFT + 1):
+                        if _action % 2 == _ineffectiveAction % 2:
+                            continue # 与无效移动行为方向相同，不能采用
+                        elif map_.is_valid_move_action(tank, _action):
+                            # TODO: 闪避方向是否还可以选择？
+                            return _action # 返回遇到的第一个可以用来闪避的移动行为
+
+        return Action.INVALID # 该策略不适用
+
+#{ END 'strategy/skirmish.py' }#
+
+
+
+#{ BEGIN 'strategy/early_warning.py' }#
+
+class EarlyWarningStrategy(SingleTankStrategy):
+
+    def make_decision(self):
+
+        tank = self._tank
+        map_ = self._map
+        oppSide = 1 - tank.side
+
+        _dx = Action.DIRECTION_OF_ACTION_X
+        _dy = Action.DIRECTION_OF_ACTION_Y
+
+        # 缓存决策行为
+        _actionDecidedBySkirmishStrategy = None
+        _actionDecidedByMarchIntoEnemyBaseStrategy = None
+
+
+        ## 检查四个方向是否存在一堵墙加地方坦克的情况 ##
+
+        def _is_dangerous_action(preAction, riskMoveActionByDxDy):
+            """
+            危险行为被定义为，下一回合按照预期行为执行，会引发危险
+
+            只有在下一回合射击，且射击方向与风险方向相同时，才会引发危险
+
+            Input:
+                - preAction               int   准备要发生的行为
+                - riskMoveActionByDxDy    int   已经预先知道有风险的方向对应的 move-action
+            """
+            if Action.is_shoot(preAction) and (preAction - 4 == riskMoveActionByDxDy):
+                # 下回合射击方向为引发危险的方向
+                destroyedFields = get_destroyed_fields(tank, preAction, map_)
+                if len(destroyedFields) > 0:
+                    for field in destroyedFields:
+                        if isinstance(field, BrickField): # 有墙被摧毁，会引发危险
+                            return True
+            return False # 其余情况下不算危险行为
+
+
+        for idx, (dx, dy) in enumerate(DIRECTIONS_URDL):
+
+            x, y = tank.xy
+            foundBrick = False # 这个方向上是否找到墙
+
+            foundRisk = False
+            riskDxDy = (0, 0)
+            oppTank = None
+
+            while True:
+                x += dx
+                y += dy
+                if not map_.in_map(x, y):
+                    break
+                currentFields = map_[x, y]
+                if len(currentFields) == 0:
+                    continue
+                elif len(currentFields) > 1:
+                    if not foundBrick: # 遭遇战
+                        return Action.INVALID
+                    else: # 墙后有地方坦克
+                        for field in currentFields:
+                            if isinstance(field, TankField) and field.side == oppSide:
+                                oppTank = field
+                                break
+                        else:
+                            raise Exception("???")
+                        foundRisk = True
+                        reskDxDy = (dx, dy)
+                        break
+                else: # 遇到 基地/墙/水/钢墙/坦克
+                    field = currentFields[0]
+                    if isinstance(field, (EmptyField, WaterField) ):
+                        continue
+                    elif isinstance(field, SteelField): # 钢墙打不掉，这个方向安全
+                        break
+                    elif isinstance(field, BaseField): # 遇到基地，不必预警 ...
+                        return Action.INVALID # 应该直接打掉 ... # TODO: 如果有炮弹
+                    elif isinstance(field, BrickField):
+                        if not foundBrick: # 第一次找到墙，标记，并继续往后找
+                            foundBrick = True
+                            continue
+                        else:
+                            break # 连续两道墙。很安全
+                    elif isinstance(field, TankField) and field.side == oppSide:
+                        if not foundBrick: # 遭遇战
+                            return Action.INVALID
+                        else: # 墙后有坦克
+                            foundRisk = True
+                            reskDxDy = (dx, dy)
+                            oppTank = field
+                            break
+                    else: # 遇到队友，不必预警
+                        # TODO: 其实不一定，因为队友可以离开 ...
+                        break
+
+            if foundRisk: # 发现危险，判断在下一回合按照预期行为是否会引发危险
+
+                if _actionDecidedBySkirmishStrategy is None:
+                    s = SkirmishStrategy(tank, map_)
+                    _actionDecidedBySkirmishStrategy = s.make_decision()
+
+                if _actionDecidedByMarchIntoEnemyBaseStrategy is None:
+                    s = MarchIntoEnemyBaseStrategy(tank, map_)
+                    _actionDecidedByMarchIntoEnemyBaseStrategy = s.make_decision()
+
+                _action1 = _actionDecidedBySkirmishStrategy
+                _action2 = _actionDecidedByMarchIntoEnemyBaseStrategy
+
+                _riskMoveActionByDxDy = idx
+
+                for _action in [_action1, _action2]:
+                    if Action.is_valid(_action):
+                        if _is_dangerous_action(_action, _riskMoveActionByDxDy):
+                            # 必须在预警策略中决策，而且必须在存在危险行为时决策
+                            # ----------------------------------------------
+                            # 如果跳过这个危险，去判断其他方向：
+                            # 1. 如果其他方向也有危险，再做出这个决策，不过是延迟行为。
+                            # 2. 如果其他方向均没有危险，预警策略就会交给低优先级策略决策
+                            # 由于此处已经知道低优先级策略存在危险，因此相当于预警策略
+                            # 做出了错误的决定。
+                            # ----------------------------------------------
+                            # 因此必须要在此处立即做出决策
+                            #
+                            # TODO: 是否有比 STAY 更好的方案
+                            return Action.STAY
+
+            # 预期的行为均不会造成危险，或者没有发现有风险行为，则继续循环
+            pass
+        # endfor #
+
+        ## 检查下一步行动后，是否有可能遇到风险 ##
+
+        if _actionDecidedBySkirmishStrategy is None:
+            s = SkirmishStrategy(tank, map_)
+            _actionDecidedBySkirmishStrategy = s.make_decision()
+
+        if _actionDecidedByMarchIntoEnemyBaseStrategy is None:
+            s = MarchIntoEnemyBaseStrategy(tank, map_)
+            _actionDecidedByMarchIntoEnemyBaseStrategy = s.make_decision()
+
+        _action1 = _actionDecidedBySkirmishStrategy
+        _action2 = _actionDecidedByMarchIntoEnemyBaseStrategy
+
+        for _action in [_action1, _action2]:
+            if Action.is_valid(_action):
+
+                foundRisk = False
+
+                if Action.is_move(_action):
+                    # 移动后恰好位于敌方射击方向，然后被打掉
+                    x, y = tank.xy
+                    x2 = x + _dx[_action]
+                    y2 = y + _dy[_action]
+
+                    for idx, (dx, dy) in enumerate(DIRECTIONS_URDL):
+
+                        if np.abs(idx - _action) == 2:
+                            continue # 不可能在移动方向的反向出现敌人
+
+                        x, y = x2, y2
+                        while True:
+                            x += dx
+                            y += dy
+                            if not map_.in_map(x, y):
+                                break
+                            currentFields = map_[x, y]
+                            if len(currentFields) == 0:
+                                continue
+                            elif len(currentFields) > 1: # 存在敌方 tank ，有风险
+                                foundRisk = True
+                                break
+                            else: # 遇到/墙/水/钢墙/坦克
+                                field = currentFields[0]
+                                if isinstance(field, (EmptyField, WaterField) ):
+                                    continue
+                                elif (  isinstance(field, TankField)
+                                        and field.side == oppSide
+                                        and not Action.is_shoot(field.previousAction)
+                                    ): # 当且仅当发现有炮弹的地方坦克时，判定为危险
+                                    foundRisk = True
+                                else: # 其他任何情况均没有危险
+                                    break
+                            if foundRisk:
+                                break
+                        if foundRisk:
+                            break
+
+                elif Action.is_shoot(_action):
+                    # 射击后击破砖块，但是敌方从两旁出现，这种情况可能造成危险
+                    destroyedFields = get_destroyed_fields(tank, _action, map_)
+                    if len(destroyedFields) == 0:
+                        pass # 没有危险
+                    elif len(destroyedFields) > 1: # 不可能出现这种情况，因为这算遭遇战
+                        return Action.INVALID
+                    else: # len(destroyedFields) == 1:
+                        field = destroyedFields[0]
+                        if isinstance(field, BrickField): # 击中砖块，会造成危险
+                            # 现在需要判断砖块之后的道路两侧是否有敌人
+                            x, y = field.xy
+                            _action -= 4
+                            while True:
+                                x += _dx[_action]
+                                y += _dy[_action]
+                                if not map_.in_map(x, y):
+                                    break
+                                currentFields = map_[x, y]
+                                # 由于之前的判定，此处理论上不会遇到敌方 tank
+                                if len(currentFields) > 1:
+                                    return Action.INVALID # 理论上不会遇到
+                                if len(currentFields) == 1:
+                                    _field = currentFields[0]
+                                    if isinstance(_field, (WaterField, SteelField, BrickField) ):
+                                        break # 发现了敌人无法在下一步移动到的kuai，因此即使敌人在周围也是安全的
+
+                                # 判断周围的方块是否有地方坦克
+                                if len(currentFields) == 0:
+                                    x3, y3 = x, y
+                                elif len(currentFields) == 1:
+                                    x3, y3 = currentFields[0].xy
+
+                                for idx, (dx, dy) in enumerate(DIRECTIONS_URDL):
+                                    if idx % 2 == _action % 2: # 同一直线
+                                        continue
+                                    x4 = x3 + dx
+                                    y4 = y3 + dy
+                                    if not map_.in_map(x4, y4):
+                                        continue
+                                    for _field in map_[x4, y4]:
+                                        if (isinstance(_field, TankField)
+                                            and _field.side == oppSide
+                                            ): # 当道路两旁存在敌人坦克时，认为有风险
+                                            foundRisk = True
+                                            break
+                                    if foundRisk:
+                                        break
+                                if foundRisk:
+                                    break
+                            # endwhile #
+                        # endif #
+
+                else: # 不是移动行为也不是设计行为，但是合理，因此是静止行为
+                    pass # 静止行为不会有风险
+
+
+                if foundRisk: # 遇到风险，等待
+                    # TODO: 也许还有比等待更好的方法
+                    return Action.STAY
+
+            # endif #
+        # endfor #
+
+        return Action.INVALID # 都不存在风险，预警策略不适用
+
+#{ END 'strategy/early_warning.py' }#
 
 
 
@@ -1210,10 +1682,27 @@ if __name__ == '__main__':
             actions.append(action)'''
 
         actions = []
+
         for tank in tanks:
-            s = RandomActionStrategy(tank, map_)
-            action = s.make_decision()
+
+            if tank.destroyed:
+                actions.append(Action.STAY)
+                continue
+
+            action = Action.INVALID
+
+            for _Strategy in [EarlyWarningStrategy, SkirmishStrategy, MarchIntoEnemyBaseStrategy]:
+                s = _Strategy(tank, map_)
+                action = s.make_decision()
+                if action != Action.INVALID: # 找到了一个策略
+                    break
+
+            if action == Action.INVALID: # 没有任何一种策略适用，则原地等待
+                action = Action.STAY
+
+            debug_print(tank, action)
             actions.append(action)
+
 
         t2 = time.time()
 

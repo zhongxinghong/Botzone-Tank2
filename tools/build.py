@@ -2,14 +2,14 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:25
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 17:08:16
+# @Last Modified time: 2019-04-28 01:54:57
 """
 项目自动化构建工具
 --------------------------
 将多个源文件合并为一个单文件
 
 
-源文件列表： ./src.json         程序会按照先后顺序进行合并
+源文件列表： ./config/src.json    程序会按照先后顺序进行合并
 输出单文件： ../build/main.py
 
 
@@ -25,11 +25,11 @@
 import os
 import re
 import time
-from _utils import abs_path, mkdir, read_file, json_load
+from _lib.utils import abs_path, mkdir, read_file, json_load
 
 
 BLANK_LINES  = "\n\n"
-SRC_JSON     = abs_path("./src.json")
+SRC_JSON     = abs_path("./config/src.json")
 BUILD_DIR    = abs_path("../build")
 OUTPUT_PY    = abs_path("../build/main.py")
 

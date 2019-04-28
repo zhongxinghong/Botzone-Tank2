@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 19:19:05
+# @Last Modified time: 2019-04-28 09:54:48
 """
 地图类
 """
@@ -44,6 +44,21 @@ class Map(object):
     def size(self):
         return (self._width, self._height)
 
+    def in_map(self, x, y):
+        """
+        判断 (x, y) 坐标是否位于地图内
+        """
+        return 0 <= x < self._width and 0 <= y < self._height
+
+    def __getitem__(self, xy):
+        """
+        获得 xy: (x, y) 的内容
+        """
+        x, y = xy
+        if not self.in_map(x, y):
+            raise Exception("(%s, %s) is not in map" % (x, y) )
+        return self._content[y][x]
+
 
 class Tank2Map(Map, metaclass=Singleton):
 
@@ -58,6 +73,10 @@ class Tank2Map(Map, metaclass=Singleton):
     @property
     def tanks(self):
         return self._tanks
+
+    @property
+    def bases(self):
+        return self._bases
 
     @CachedProperty
     def matrix(self):
@@ -163,14 +182,6 @@ class Tank2Map(Map, metaclass=Singleton):
         return field
 
 
-    def get_fields(self, x, y):
-        """
-        获得 (x, y) 坐标下的 fields
-        """
-        if not self.in_map(x, y):
-            raise Exception("(%s, %s) is not in map" % (x, y) )
-        return self._content[y][x]
-
     def to_type_matrix(self):
         """
         转化成以 field.type 值表示的地图矩阵
@@ -200,12 +211,6 @@ class Tank2Map(Map, metaclass=Singleton):
 
         return np.array(matrix)
 
-    def in_map(self, x, y):
-        """
-        判断 (x, y) 坐标是否位于地图内
-        """
-        return 0 <= x < self._width and 0 <= y < self._height
-
     def is_valid_move_action(self, tank, action):
         """
         判断是否为合法的移动行为
@@ -213,7 +218,7 @@ class Tank2Map(Map, metaclass=Singleton):
         assert Action.is_move(action), "action %s is not a move-action" % action
         _dx = Action.DIRECTION_OF_ACTION_X
         _dy = Action.DIRECTION_OF_ACTION_Y
-        _TYPE_CAN_MOVE_TO = ( Field.EMPTY, Field.DUMMY )
+        _TYPE_CAN_MOVE_TO = ( Field.DUMMY, Field.EMPTY ) # 遇到坦克不能移动！
         x, y = tank.xy
         x += _dx[action]
         y += _dy[action]
@@ -249,55 +254,6 @@ class Tank2Map(Map, metaclass=Singleton):
             return self.is_valid_shoot_action(tank, action)
         else: # 未知的行为
             raise Exception("unexpected action %s" % action)
-
-
-    def get_destroyed_fields(self, tank, action):
-        """
-        下一回合某坦克执行一个射击行为后，将会摧毁的 fields
-
-        用于单向分析 action 所能造成的影响，不考虑对方下一回合的决策
-
-        - 不判断自身是否与其他 tank 重叠
-        - 如果对方是 tank 认为对方下回合不开炮
-
-        Return:
-            - fields   [Field]/[]   被摧毁的 fields
-                                    如果没有对象被摧毁，则返回空列表
-        """
-        assert self.is_valid_shoot_action(tank, action)
-        x, y = tank.xy
-
-        _dx = Action.DIRECTION_OF_ACTION_X
-        _dy = Action.DIRECTION_OF_ACTION_Y
-
-        action %= 4 # 使之与 dx, dy 的 idx 对应
-
-        while True: # 查找该行/列上是否有可以被摧毁的对象
-
-            x += _dx[action]
-            y += _dy[action]
-
-            if not self.in_map(x, y):
-                break
-
-            currentFields = self._content[y][x]
-
-            if len(currentFields) == 0: # 没有对象
-                continue
-            elif len(currentFields) > 1: # 均为坦克
-                return currentFields
-            else: # len == 1
-                field = currentFields[0]
-                if isinstance(field, EmptyField): # 空对象
-                    continue
-                elif isinstance(field, WaterField): # 忽视水路
-                    continue
-                elif isinstance(field, SteelField): # 钢墙不可摧毁
-                    return []
-                else:
-                    return currentFields
-
-        return [] # 没有任何对象被摧毁
 
 
     def do_actions(self, my_side, my_actions, opposite_actions):

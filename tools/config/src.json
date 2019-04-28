@@ -44,6 +44,18 @@
     "file": "../core/strategy/move_to_water.py"
 },
 {
+    "package": "strategy",
+    "file": "../core/strategy/march_into_enemy_base.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/skirmish.py"
+},
+{
+    "package": "strategy",
+    "file": "../core/strategy/early_warning.py"
+},
+{
     "package": "",
     "file": "../core/stream.py"
 },

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 15:53:38
+# @Last Modified time: 2019-04-28 13:00:15
 """
 行为类
 """
@@ -17,7 +17,7 @@ __all__ = [
 
 class Action(object):
 
-    DUMMY       = -3
+    DUMMY       = -3 # 额外添加的 空行为
     INVALID     = -2
     STAY        = -1
     MOVE_UP     = 0
@@ -32,6 +32,13 @@ class Action(object):
     # 根据 action 的值判断移动方向和射击方向
     DIRECTION_OF_ACTION_X  = (  0, 1, 0, -1 )
     DIRECTION_OF_ACTION_Y  = ( -1, 0, 1,  0 )
+
+    @staticmethod
+    def is_valid(action):
+        """
+        判断是否为有效行为
+        """
+        return -2 < action <= 7
 
     @staticmethod
     def is_move(action):

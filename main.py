@@ -2,12 +2,15 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:04:40
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 18:03:26
+# @Last Modified time: 2019-04-28 10:25:08
 
 from core.const import MAP_WIDTH, MAP_HEIGHT, TANKS_PER_SIDE, LONG_RUNNING_MODE
 from core.global_ import time, np
+from core.utils import debug_print
 from core.map_ import Tank2Map
-from core.strategy import RandomActionStrategy, MoveToWaterStrategy
+from core.action import Action
+from core.strategy import RandomActionStrategy, MoveToWaterStrategy, MarchIntoEnemyBaseStrategy,\
+                        SkirmishStrategy, EarlyWarningStrategy
 from core.stream import BotzoneIstream, BotzoneOstream
 from core.botzone import Tank2Botzone
 
@@ -43,10 +46,27 @@ if __name__ == '__main__':
             actions.append(action)'''
 
         actions = []
+
         for tank in tanks:
-            s = RandomActionStrategy(tank, map_)
-            action = s.make_decision()
+
+            if tank.destroyed:
+                actions.append(Action.STAY)
+                continue
+
+            action = Action.INVALID
+
+            for _Strategy in [EarlyWarningStrategy, SkirmishStrategy, MarchIntoEnemyBaseStrategy]:
+                s = _Strategy(tank, map_)
+                action = s.make_decision()
+                if action != Action.INVALID: # 找到了一个策略
+                    break
+
+            if action == Action.INVALID: # 没有任何一种策略适用，则原地等待
+                action = Action.STAY
+
+            debug_print(tank, action)
             actions.append(action)
+
 
         t2 = time.time()
 

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-25 04:38:40
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 19:18:05
+# @Last Modified time: 2019-04-28 08:16:38
 
 import os
 import json
@@ -16,10 +16,12 @@ sys.path.append("../")
 from core.botzone import Tank2Botzone
 from core.map_ import Tank2Map
 from core.const import MAP_WIDTH, MAP_HEIGHT
-from core.strategy import RandomActionStrategy
+from core.action import Action
+from core.strategy import MoveToWaterStrategy, RandomActionStrategy, MarchIntoEnemyBaseStrategy,\
+                        SkirmishStrategy
 
 
-DATA_DIR = "../dataset/5cc4391375e55951524aa589/"
+DATA_DIR = "../dataset/5cc4ec5675e55951524b45a3/"
 
 BLUE_INPUT_JSON = os.path.join(DATA_DIR, "blue.input.json")
 RED_INPUT_JSON  = os.path.join(DATA_DIR, "red.input.json")
@@ -54,7 +56,7 @@ if __name__ == '__main__':
 
     terminal = Tank2Botzone(map_)
 
-    inputJSON = cut_by_turn(redInputJSON, turn=19)
+    inputJSON = cut_by_turn(redInputJSON, turn=5)
 
     stream = to_stream(json.dumps(inputJSON))
 
@@ -63,6 +65,21 @@ if __name__ == '__main__':
     actions = []
     for tanks in map_.tanks:
         for tank in tanks:
-            s = RandomActionStrategy(tank, map_)
-            action = s.make_decision()
+
+            if tank.destroyed:
+                actions.append(Action.STAY)
+                continue
+
+            action = Action.INVALID
+
+            for _Strategy in [SkirmishStrategy]:
+                s = _Strategy(tank, map_)
+                action = s.make_decision()
+                print("%r, %s" % (tank, action) )
+                if action != Action.INVALID:
+                    break
+
+            if action == Action.INVALID: # 没有任何一种策略适用，则原地等待
+                action = Action.STAY
+
             actions.append(action)

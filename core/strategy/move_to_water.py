@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:47
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 16:35:00
+# @Last Modified time: 2019-04-28 06:52:38
 """
 [TEST] 移动向距离自己最近的水域
 
@@ -23,12 +23,12 @@ from ..const import DEBUG_MODE
 from ..global_ import np, pprint
 from ..action import Action
 from ..field import Field, WaterField
-from .abstract import Strategy
-from ._utils import _find_shortest_route
+from .abstract import SingleTankStrategy
+from ._utils import find_shortest_route
 
 #{ BEGIN }#
 
-class MoveToWaterStrategy(Strategy):
+class MoveToWaterStrategy(SingleTankStrategy):
 
     def __init__(self, tank, map, water_points=None):
         """
@@ -61,7 +61,7 @@ class MoveToWaterStrategy(Strategy):
         _idx = np.square( xy - waterPoints ).sum(axis=1).argmin()
         x2, y2 = nearestWaterPoint = waterPoints[_idx]
 
-        route = _find_shortest_route(
+        route = find_shortest_route(
                     tank.xy,
                     nearestWaterPoint,
                     matrix_T,
@@ -88,7 +88,7 @@ class MoveToWaterStrategy(Strategy):
             x, y = tank.xy
             x += _dx[action]
             y += _dy[action]
-            fields = map_.get_fields(x, y)
+            fields = map_[x, y]
             assert len(fields) > 0, "except WATER or BRICK in (%s, %s)" % (x, y)
             field = fields[0]
             action += 4 # 尝试射击
