@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:39
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 02:25:35
+# @Last Modified time: 2019-05-01 02:04:13
 
 __all__ = [
 
@@ -13,6 +13,9 @@ __all__ = [
 
     "json_load",
     "json_dump",
+
+    "b",
+    "u",
 
     "Singleton",
 
@@ -27,14 +30,14 @@ except ModuleNotFoundError:
     import json
 
 
-_ROOT_DIR = os.path.join(os.path.dirname(__file__), "../") # tools/ 为根目录
+__ROOT_DIR = os.path.join(os.path.dirname(__file__), "../") # tools/ 为根目录
 
 def mkdir(path):
     if not os.path.exists(path):
         os.mkdir(path)
 
 def abs_path(*path):
-    return os.path.abspath(os.path.join(_ROOT_DIR, *path))
+    return os.path.abspath(os.path.join(__ROOT_DIR, *path))
 
 def read_file(file, encoding="utf-8-sig"):
     with open(file, "r", encoding=encoding) as fp:
@@ -42,21 +45,36 @@ def read_file(file, encoding="utf-8-sig"):
 
 
 def json_load(file, *args, **kwargs):
-    if not file:
-        return None
-    elif not os.path.exists(file):
-        return None
-    else:
-        with open(file, "r", encoding="utf-8-sig") as fp:
-            try:
-                return json.load(fp, *args, **kwargs)
-            except json.JSONDecodeError:
-                return None
+    with open(file, "r", encoding="utf-8-sig") as fp:
+        return json.load(fp, *args, **kwargs)
 
 def json_dump(obj, file, *args, **kwargs):
     encoding = kwargs.pop("encoding", "utf-8")
     with open(file, "w", encoding=encoding) as fp:
         json.dump(obj, fp, *args, **kwargs)
+
+
+def b(s):
+    """
+    bytes/str/int/float -> bytes
+    """
+    if isinstance(s, bytes):
+        return s
+    elif isinstance(s, (str,int,float)):
+        return str(s).encode("utf-8")
+    else:
+        raise TypeError(s)
+
+def u(s):
+    """
+    bytes/str/int/float -> str(utf8)
+    """
+    if isinstance(s, (str,int,float)):
+        return str(s)
+    elif isinstance(s, bytes):
+        return s.decode("utf-8")
+    else:
+        raise TypeError(s)
 
 
 class Singleton(type):

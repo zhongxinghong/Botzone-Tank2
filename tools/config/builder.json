@@ -1,0 +1,109 @@
+{
+    "filename": "botzone_tank2.py",
+
+    "header":
+    {
+        "author": "Rabbit",
+        "license": "../LICENSE",
+        "description": "Auto-built single-file Python script for Botzone/Tank2"
+    },
+
+    "sources": [
+    {
+        "package": "",
+        "file": "../core/const.py"
+    },
+    {
+        "package": "",
+        "file": "../core/const.py"
+    },
+    {
+        "package": "",
+        "file": "../core/global_.py"
+    },
+    {
+        "package": "",
+        "file": "../core/utils.py"
+    },
+    {
+        "package": "",
+        "file": "../core/action.py"
+    },
+    {
+        "package": "",
+        "file": "../core/field.py"
+    },
+    {
+        "package": "",
+        "file": "../core/map_.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/signal.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/utils.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/bfs.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/estimate.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/abstract.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/random_action.py",
+        "disabled": true
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/move_to_water.py",
+        "disabled": true
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/march_into_enemy_base.py",
+        "disabled": true
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/skirmish.py",
+        "disabled": true
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/early_warning.py",
+        "disabled": true
+    },
+    {
+        "package": "",
+        "file": "../core/tank.py"
+    },
+    {
+        "package": "",
+        "file": "../core/player.py"
+    },
+    {
+        "package": "",
+        "file": "../core/team.py"
+    },
+    {
+        "package": "",
+        "file": "../core/stream.py"
+    },
+    {
+        "package": "",
+        "file": "../core/botzone.py"
+    },
+    {
+        "package": "",
+        "file": "../main.py"
+    }]
+}

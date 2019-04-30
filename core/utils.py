@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 18:59:45
+# @Last Modified time: 2019-04-30 16:24:12
 """
 工具类
 """
@@ -12,22 +12,34 @@ __all__ = [
     "debug_print",
     "debug_pprint",
 
+    "simulator_print",
+    "simulator_pprint",
+
     "CachedProperty",
     "Singleton",
 
     ]
 
-from .const import DEBUG_MODE, LONG_RUNNING_MODE
+from .const import DEBUG_MODE, SIMULATOR_ENV, SIMULATOR_PRINT
 from .global_ import pprint
 
 #{ BEGIN }#
+
+_null_func = lambda *args, **kwargs: None
 
 if DEBUG_MODE:
     debug_print  = print
     debug_pprint = pprint
 else:
-    debug_print  = lambda *args, **kwargs: None
-    debug_pprint = debug_print
+    debug_print  = _null_func
+    debug_pprint = _null_func
+
+if SIMULATOR_ENV and SIMULATOR_PRINT:
+    simulator_print  = print
+    simulator_pprint = pprint
+else:
+    simulator_print  = _null_func
+    simulator_pprint = _null_func
 
 
 class _Missing(object):

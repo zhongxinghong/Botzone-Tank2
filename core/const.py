@@ -2,18 +2,21 @@
 # @Author: Administrator
 # @Date:   2019-04-24 21:18:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 12:35:15
+# @Last Modified time: 2019-04-30 16:23:18
 """
 全局常数
 """
 
 #{ BEGIN }#
 
-#-----------------#
-# Release Version #
-#-----------------#
+#----------------------#
+# Environment Variable #
+#----------------------#
 DEBUG_MODE        = False
 LONG_RUNNING_MODE = False
+SIMULATOR_ENV     = False
+COMPACT_MAP       = False
+SIMULATOR_PRINT   = True
 
 #-------------#
 # Game Config #
@@ -31,8 +34,11 @@ GAME_STATUS_DRAW     = -1
 GAME_STATUS_BLUE_WIN = 0
 GAME_STATUS_RED_WIN  = 1
 
+BLUE_SIDE = 0
+RED_SIDE  = 1
 
-DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0)  ) # 上右下左，与行为一致
+DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0) ) # 上右下左，与行为一致
+
 
 #{ END }#
 
@@ -41,4 +47,3 @@ DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0)  ) # 上右下左，与行为�
 # Debug Mode #
 #------------#
 DEBUG_MODE        = True
-LONG_RUNNING_MODE = True

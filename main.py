@@ -2,28 +2,30 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:04:40
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 10:25:08
+# @Last Modified time: 2019-04-30 21:45:12
 
-from core.const import MAP_WIDTH, MAP_HEIGHT, TANKS_PER_SIDE, LONG_RUNNING_MODE
+from core.const import LONG_RUNNING_MODE, SIMULATOR_ENV, MAP_WIDTH, MAP_HEIGHT,\
+                        TANKS_PER_SIDE, SIDE_COUNT, BLUE_SIDE, RED_SIDE
 from core.global_ import time, np
-from core.utils import debug_print
+from core.utils import debug_print, simulator_print
 from core.map_ import Tank2Map
 from core.action import Action
-from core.strategy import RandomActionStrategy, MoveToWaterStrategy, MarchIntoEnemyBaseStrategy,\
-                        SkirmishStrategy, EarlyWarningStrategy
 from core.stream import BotzoneIstream, BotzoneOstream
 from core.botzone import Tank2Botzone
+from core.player import Tank2Player
+from core.team import Tank2Team
 
 #{ BEGIN }#
 
-if __name__ == '__main__':
+
+def main(istream=None, ostream=None):
 
     map_ = Tank2Map(MAP_WIDTH, MAP_HEIGHT)
 
     terminal = Tank2Botzone(map_, long_running=LONG_RUNNING_MODE)
 
-    istream = BotzoneIstream()
-    ostream = BotzoneOstream()
+    istream = istream or BotzoneIstream()
+    ostream = ostream or BotzoneOstream()
 
     while True:
 
@@ -34,46 +36,80 @@ if __name__ == '__main__':
 
         terminal.handle_input(stream=istream)
 
+        if SIMULATOR_ENV:
+            map_.debug_print_out()
+
         side = terminal.mySide
-        tanks = map_.tanks[side]
+        tanks = map_.tanks
 
-        '''waterPoints = MoveToWaterStrategy.find_water_points(map_)
+        bluePlayer0 = Tank2Player(tanks[BLUE_SIDE][0], map_, terminal.get_past_actions(BLUE_SIDE, 0))
+        bluePlayer1 = Tank2Player(tanks[BLUE_SIDE][1], map_, terminal.get_past_actions(BLUE_SIDE, 1))
+        redPlayer0  = Tank2Player(tanks[RED_SIDE][0], map_, terminal.get_past_actions(RED_SIDE, 0))
+        redPlayer1  = Tank2Player(tanks[RED_SIDE][1], map_, terminal.get_past_actions(RED_SIDE, 1))
 
-        actions = []
-        for tank in tanks:
-            s = MoveToWaterStrategy(tank, map_, waterPoints)
-            action = s.make_decision()
-            actions.append(action)'''
+        bluePlayer0.set_teammate(bluePlayer1)
+        bluePlayer1.set_teammate(bluePlayer0)
+        redPlayer0.set_teammate(redPlayer1)
+        redPlayer1.set_teammate(redPlayer0)
+        bluePlayer0.set_opponents([redPlayer0, redPlayer1])
+        bluePlayer1.set_opponents([redPlayer0, redPlayer1])
+        redPlayer0.set_opponents([bluePlayer0, bluePlayer1])
+        redPlayer1.set_opponents([bluePlayer0, bluePlayer1])
 
-        actions = []
+        blueTeam = Tank2Team(BLUE_SIDE, bluePlayer0, bluePlayer1)
+        redTeam  = Tank2Team(RED_SIDE, redPlayer0, redPlayer1)
+        blueTeam.set_opponent_team(redTeam)
+        redTeam.set_opponent_team(blueTeam)
 
-        for tank in tanks:
+        if side == BLUE_SIDE:
+            myPlayer0 = bluePlayer0
+            myPlayer1 = bluePlayer1
+            myTeam    = blueTeam
+            oppTeam   = redTeam
+        elif side == RED_SIDE:
+            myPlayer0 = redPlayer0
+            myPlayer1 = redPlayer1
+            myTeam    = redTeam
+            oppTeam   = blueTeam
+        else:
+            raise Exception("unexpected side %s" % side)
 
-            if tank.destroyed:
-                actions.append(Action.STAY)
-                continue
+        actions = myTeam.make_decision()
 
-            action = Action.INVALID
+        if SIMULATOR_ENV:
+            oppActions = oppActions = oppTeam.make_decision()
 
-            for _Strategy in [EarlyWarningStrategy, SkirmishStrategy, MarchIntoEnemyBaseStrategy]:
-                s = _Strategy(tank, map_)
-                action = s.make_decision()
-                if action != Action.INVALID: # 找到了一个策略
-                    break
-
-            if action == Action.INVALID: # 没有任何一种策略适用，则原地等待
-                action = Action.STAY
-
-            debug_print(tank, action)
-            actions.append(action)
+        if SIMULATOR_ENV:
+            _CUT_OFF_RULE = "-" * 20
+            simulator_print("Decisions for next turn:")
+            simulator_print(_CUT_OFF_RULE)
+            _SIDE_NAMES = ["Blue", "Red"]
+            for id_, action in enumerate(actions):
+                simulator_print("%s %02d: %s" % (_SIDE_NAMES[side], id_+1,
+                                    Action.get_name(action)) )
+            for id_, action in enumerate(oppActions):
+                simulator_print("%s %02d: %s" % (_SIDE_NAMES[1-side], id_+1,
+                                    Action.get_name(action)))
+            simulator_print(_CUT_OFF_RULE)
+            simulator_print("Actually actions on this turn:")
+            simulator_print(_CUT_OFF_RULE)
+            for side, tanks in enumerate(map_.tanks):
+                for id_, tank in enumerate(tanks):
+                    simulator_print("%s %02d: %s" % (_SIDE_NAMES[side], id_+1,
+                                        Action.get_name(tank.previousAction)))
+            simulator_print(_CUT_OFF_RULE)
 
 
         t2 = time.time()
 
         debugInfo = {
-            "cost": round(t2 - t1, 3)
+            "cost": round(t2-t1, 4),
             }
 
         terminal.make_output(actions, stream=ostream, debug=debugInfo)
+
+
+if __name__ == '__main__':
+    main()
 
 #{ END }#

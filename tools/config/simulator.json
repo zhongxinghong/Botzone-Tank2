@@ -1,0 +1,27 @@
+{
+    "game":
+    {
+        "match_id": "5cc8832975e55951524dded0",
+        "side": 1,
+        "initial_turn": 1
+    },
+
+    "environment":
+    {
+        "debug": true,
+        "long_running": false,
+        "simulator": true
+    },
+
+    "debug":
+    {
+        "compact_map": false
+    },
+
+    "simulator":
+    {
+        "pause": true,
+        "turn_interval": 0.3,
+        "print": true
+    }
+}

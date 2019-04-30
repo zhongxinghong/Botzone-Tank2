@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 03:31:43
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 15:51:27
+# @Last Modified time: 2019-04-30 04:33:13
 """
 不顾一切冲向敌方基地
 
@@ -23,10 +23,10 @@ from ..const import DEBUG_MODE
 from ..global_ import pprint
 from ..utils import debug_print
 from ..action import Action
-from ..field import TankField, SteelField, BaseField
-from ._utils import find_shortest_route, get_destroyed_fields
+from ..field import Field, TankField, SteelField, BaseField
+from ._utils import get_destroyed_fields
+from ._bfs import find_shortest_route_for_shoot, DEFAULT_BLOCK_TYPES, DEFAULT_DESTROYABLE_TYPES
 from .abstract import SingleTankStrategy
-
 
 #{ BEGIN }#
 
@@ -41,21 +41,44 @@ class MarchIntoEnemyBaseStrategy(SingleTankStrategy):
         _dx = Action.DIRECTION_OF_ACTION_X
         _dy = Action.DIRECTION_OF_ACTION_Y
 
+        side    = tank.side
         oppSide = 1 - tank.side
         oppBase = map_.bases[oppSide]
 
-        route = find_shortest_route(tank.xy, oppBase.xy, matrix_T, side=tank.side)
+        cMatrixMap = matrix_T.copy() # 模拟一个没有敌人 tank 的地图
 
-        '''if DEBUG_MODE:
-            map_.print_out()
-            # pprint(self._map.matrix)
-            print(route)'''
+        debug_print("cMatrixMap:\n", cMatrixMap)
+
+        debug_print(map_.tanks)
+        for oppTank in map_.tanks[oppSide]:
+            if cMatrixMap[x, y] == Field.TANK + 1 + oppTank.side:
+                cMatrixMap[oppTank.xy] = Field.EMPTY # 先将对方 tank 设为空！
+
+        debug_print("cMatrixMap:\n", cMatrixMap)
+
+        route = find_shortest_route_for_shoot(
+                    tank.xy,
+                    oppBase.xy,
+                    cMatrixMap,
+                    block_types=DEFAULT_BLOCK_TYPES+(
+                        Field.BASE + 1 + side,    # 己方基地
+                        Field.TANK + 1 + side,    #　己方坦克
+                        Field.MULTI_TANK,         # 多重坦克，不能移动
+                    ),
+                    destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
+                        Field.BASE + 1 + oppSide, # 对方基地
+                        #Field.TANK + 1 + oppSide, # 对方坦克
+                        #Field.MULTI_TANK,
+                    ))
+
+        if len(route) == 0: # 没有找到路线，这种情况不可能
+            return Action.STAY
 
         if len(route) == 1:    # 说明 start 和 end 相同
             return Action.STAY # 停留不动
 
         x1, y1 = tank.xy
-        x3, y3 = route[1] # 跳过 start
+        x3, y3, _, _ = route[1] # 跳过 start
         action = Action.get_action(x1, y1, x3, y3)
 
         ## 优先移动 ##

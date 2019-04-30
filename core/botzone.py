@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:33:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 18:05:19
+# @Last Modified time: 2019-04-30 04:16:56
 """
 Botzone 终端类
 
@@ -15,8 +15,10 @@ __all__ = [
 
     ]
 
+from .const import SIDE_COUNT, TANKS_PER_SIDE
 from .global_ import json, sys
 from .utils import Singleton
+from .field import BrickField, SteelField, WaterField
 
 #{ BEGIN }#
 
@@ -28,7 +30,6 @@ class Botzone(object):
         self._globalData = None
         self._requests = []  # 对方的决策
         self._responses = [] # 己方的决策
-
 
     def handle_input(self, stream):
         """
@@ -67,14 +68,20 @@ class Botzone(object):
             sys.exit(0)
 
 
-
 class Tank2Botzone(Botzone, metaclass=Singleton):
 
     def __init__(self, map, long_running=False):
         super().__init__(long_running)
         self._mySide = -1
         self._map = map
+        self._pastActions = {
+            (side, id_): [] for side in range(SIDE_COUNT)
+                            for id_ in range(TANKS_PER_SIDE)
+        }
 
+    @property
+    def turn(self):
+        return self._map.turn
 
     @property
     def mySide(self):
@@ -99,28 +106,53 @@ class Tank2Botzone(Botzone, metaclass=Singleton):
                         yield (x, y)
                     mask <<= 1
 
+
     def handle_input(self, stream=sys.stdin):
 
         super().handle_input(stream)
 
+        assert len(self._requests) - len(self._responses) == 1 # 带 header
+
         header = self._requests.pop(0) # 此时 header 被去掉
 
         self._mySide = header["mySide"]
+        assert self._mySide in (0, 1), "unexpected mySide %s" % self._mySide
 
-        for x, y in self._parse_field_points(header["brickfield"]):
-            self._map.create_brick_field(x, y)
+        for key, _Field in [("brickfield", BrickField),
+                            ("steelfield", SteelField),
+                            ("waterfield", WaterField),]:
+            for x, y in self._parse_field_points(header[key]):
+                self._map.insert_field(_Field(x, y))
 
-        for x, y in self._parse_field_points(header["steelfield"]):
-            self._map.create_steel_field(x, y)
+        if self._mySide == 0:
+            allBlueActions = self._responses
+            allRedActions  = self._requests
+        elif self._mySide == 1:
+            allBlueActions = self._requests
+            allRedActions  = self._responses
 
-        for x, y in self._parse_field_points(header["waterfield"]):
-            self._map.create_water_field(x, y)
+        for blueActions, redActions in zip(allBlueActions, allRedActions):
+            self._map.perform(blueActions, redActions)
 
-        self._map.do_actions(self._mySide, self._responses, self._requests)
-
+        if not len(allBlueActions) == len(allRedActions) == 0:
+            b0, b1 = zip(*allBlueActions)
+            r0, r1 = zip(*allRedActions)
+            self._pastActions = { # { (side, id): [Action] }
+                (0, 0): b0, (0, 1): b1,
+                (1, 0): r0, (1, 1): r1,
+            }
 
     def make_output(self, actions, stream=sys.stdout,
                     debug=None, data=None, globaldata=None):
         super().make_output(stream, actions, debug, data, globaldata)
+
+    def get_past_actions(self, side, id):
+        """
+        获得某一坦克的历史决策
+        """
+        return self._pastActions.get( (side, id), [] ) # 没有记录则抛出 []
+
+
+
 
 #{ END }#

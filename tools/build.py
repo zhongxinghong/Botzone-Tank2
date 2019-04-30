@@ -2,130 +2,89 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:25
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 01:54:57
+# @Last Modified time: 2019-05-01 02:46:10
 """
 项目自动化构建工具
 --------------------------
 将多个源文件合并为一个单文件
 
-
-源文件列表： ./config/src.json    程序会按照先后顺序进行合并
-输出单文件： ../build/main.py
+- ./config/builder.json  配置项及源文件列表，程序会按照先后顺序进行合并
+- ../build/main.py       目标输出文件
 
 
 代码区域的标记方式：
 
 #{ BEGIN }#
+
     Your codes here ...
+
 #{ END }#
 
-一个文件中可以有一个或多个代码区域
+注：一个文件中可以有一个或多个代码区域
+
 """
 
 import os
-import re
 import time
 from _lib.utils import abs_path, mkdir, read_file, json_load
+from _lib.builder.const import BLANK_LINES, BUILD_DIR, CONFIG_JSON_FILE
+from _lib.builder.bean import SourceBean
+from _lib.builder.parser import extract_code
 
 
-BLANK_LINES  = "\n\n"
-SRC_JSON     = abs_path("./config/src.json")
-BUILD_DIR    = abs_path("../build")
-OUTPUT_PY    = abs_path("../build/main.py")
+config = json_load(CONFIG_JSON_FILE)
 
-HEADER = f"""\
+AUTHOR       = config["header"]["author"]
+LICENSE_FILE = config["header"]["license"]
+DESCRIPTION  = config["header"]["description"]
+FILENAME     = config["filename"]
+SOURCES_LIST = config["sources"]
+
+OUTPUT_FILE  = os.path.join(BUILD_DIR, FILENAME)
+
+LICENSE      = read_file(LICENSE_FILE) if LICENSE_FILE else None
+
+HEADER = f'''\
 # -*- coding: utf-8 -*-
-# @Author:   Rabbit
-# @Filename: {os.path.basename(OUTPUT_PY)}
-# @Date:     {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))}
-# @Description: Auto-built single-file Python script for Botzone/Tank2
-"""
+# @Author:   { AUTHOR }
+# @Filename: { FILENAME }
+# @Date:     { time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())) }
+# @Description: { DESCRIPTION or "" }
+'''
 
-
-class SourceBean(object):
-    """
-    src.json 中每个 src file 的 Bean 类
-
-    struct:　{
-        "pacakge": str,
-        "file": str,
-    }
-    """
-    def __init__(self, src):
-        self._file    = abs_path(src["file"])
-        self._package = src["package"]
-
-    @property
-    def file(self):
-        """
-        src file 的绝对路径
-        """
-        return self._file
-
-    @property
-    def package(self):
-        r"""
-        package 名称，可以添加到 filename 前方
-
-        WARNING:
-            - 前后不能带任何 "/", "\" 路径分隔符
-        """
-        return self._package
-
-    @property
-    def filename(self):
-        """
-        src filename 文件名
-        """
-        return os.path.basename(self._file)
-
-    @property
-    def filenameWithPackage(self):
-        """
-        添加了 package 前缀的 filename
-        """
-        _DELIMETER = "/"
-        return _DELIMETER.join([self._package, self.filename]).strip(_DELIMETER)
-
-
-
-_Regex_Code = re.compile(r"#{\s*BEGIN\s*}#\s*(.*?)\s*#{\s*END\s*}#", re.I|re.S)
-
-def extract_code(content):
-    res = _Regex_Code.findall(content)
-    if len(res) == 0:
-        raise Exception(r"No zone #{ BEGIN }#{code}#{ END }#, " + "content:\n" + content)
-    return BLANK_LINES.join(res)
-
+if LICENSE is not None:
+    HEADER += f'"""\n{ LICENSE.strip() }\n"""'
 
 
 def main():
 
-    mkdir(BUILD_DIR)
+    mkdir(BUILD_DIR) # 创建文件将爱
 
-    wfp = open(OUTPUT_PY, "w", encoding="utf-8")
+    fp = open(OUTPUT_FILE, "w", encoding="utf-8")
 
-    wfp.write(HEADER)
-    wfp.write(BLANK_LINES)
+    fp.write(HEADER)
+    fp.write(BLANK_LINES)
 
-    for _src in json_load(SRC_JSON):
+    for _src in SOURCES_LIST:
 
         src = SourceBean(_src)
+        if src.disabled:
+            continue
 
         file     = src.file
-        filename = src.filenameWithPackage
+        fullname = src.fullname
 
-        wfp.write("#{ BEGIN %r }#" % filename)
-        wfp.write(BLANK_LINES)
+        fp.write("#{ BEGIN %r }#" % fullname)
+        fp.write(BLANK_LINES)
         content = read_file(file)
         code = extract_code(content)
-        wfp.write(code)
-        wfp.write(BLANK_LINES)
+        fp.write(code)
+        fp.write(BLANK_LINES)
 
-        wfp.write("#{ END %r }#" % filename)
-        wfp.write(BLANK_LINES * 2)
+        fp.write("#{ END %r }#" % fullname)
+        fp.write(BLANK_LINES * 2)
 
-    wfp.close()
+    fp.close()
 
 
 if __name__ == '__main__':

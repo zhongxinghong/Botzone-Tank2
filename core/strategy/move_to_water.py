@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:47
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 06:52:38
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-04-29 09:04:28
 """
 [TEST] 移动向距离自己最近的水域
 
@@ -11,6 +11,10 @@ Step：
 2. 通过 BFS 查找最短路径，由此确定下一个理想的移动行为
 3. 判断是否可以移动，不能移动则尝试射击
 4. 判断是否可以射击，不能射击则当回合停止
+
+WARNING:
+- 不再维护
+
 """
 
 __all__ = [
@@ -24,7 +28,7 @@ from ..global_ import np, pprint
 from ..action import Action
 from ..field import Field, WaterField
 from .abstract import SingleTankStrategy
-from ._utils import find_shortest_route
+from ._utils import find_shortest_route_for_move
 
 #{ BEGIN }#
 
@@ -61,14 +65,14 @@ class MoveToWaterStrategy(SingleTankStrategy):
         _idx = np.square( xy - waterPoints ).sum(axis=1).argmin()
         x2, y2 = nearestWaterPoint = waterPoints[_idx]
 
-        route = find_shortest_route(
+        route = find_shortest_route_for_move(
                     tank.xy,
                     nearestWaterPoint,
                     matrix_T,
-                    cannot_reach_type=[Field.STEEL] ) # 水域允许到达
+                    block_types=[Field.STEEL]) # 水域允许到达
 
         if DEBUG_MODE:
-            map_.print_out()
+            map_.debug_print_out()
             pprint(self._map.matrix)
             print("")
             pprint(route)
