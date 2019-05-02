@@ -55,7 +55,8 @@
     },
     {
         "package": "strategy",
-        "file": "../core/strategy/abstract.py"
+        "file": "../core/strategy/abstract.py",
+        "disabled": true
     },
     {
         "package": "strategy",

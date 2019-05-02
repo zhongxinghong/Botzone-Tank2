@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 11:41:00
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 13:57:18
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-02 22:50:57
 
 __all__ = [
 
@@ -17,6 +17,8 @@ __all__ = [
 import json
 from io import BytesIO
 from pprint import pprint
+from functools import wraps
+from copy import deepcopy
 from ..utils import json_load, b
 
 
@@ -28,7 +30,7 @@ class AbstractBotzoneIstream(object):
 
 class AbstractBotzoneOstream(object):
 
-    def writer(self, data, **kwargs):
+    def write(self, data, **kwargs):
         raise NotImplementedError
 
 
@@ -59,11 +61,24 @@ class SimulatorTextInputStream(AbstractBotzoneIstream):
 
 class SimulatorConsoleOutputStream(AbstractBotzoneOstream):
 
-    def __init__(self, pretty=False):
+    def __init__(self, connection, pretty=False, hide_data=False):
+        self._connection = connection # 多进程交流
         self._pretty = pretty
+        self._hide_data = hide_data
 
     def write(self, data):
-        if not self._pretty:
-            print(data)
+
+        self._connection.send(data) # 发回去原始的 data
+
+        if not self._hide_data:
+            _data = data
         else:
-            pprint(data)
+            _raw = json.loads(data)
+            _data = { k:v for k,v in _raw.items() if k != "data" }
+            if "data" in _raw:
+                _data["data"] = "hidden"
+
+        if not self._pretty:
+            print(_data)
+        else:
+            pprint(_data)

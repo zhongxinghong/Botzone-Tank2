@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 01:51:42
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-02 16:52:51
 """
 地图类
 """
@@ -182,7 +182,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
                 if len(fields) == 0:
                     matrix[y, x] = Field.EMPTY
                 elif len(fields) > 2:
-                    matrix[y, x] = Field.MULTI_TANk # 重合视为一个坦克
+                    matrix[y, x] = Field.MULTI_TANK # 重合视为一个坦克
                 else:
                     field = fields[0]
                     if isinstance(field, (BaseField, TankField) ):

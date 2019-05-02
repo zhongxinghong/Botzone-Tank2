@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:33:03
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 14:25:57
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-02 22:48:12
 """
 Botzone 终端类
 
@@ -15,9 +15,9 @@ __all__ = [
 
     ]
 
-from .const import SIDE_COUNT, TANKS_PER_SIDE
+from .const import SIMULATOR_ENV, SIDE_COUNT, TANKS_PER_SIDE
 from .global_ import json, sys
-from .utils import SingletonMeta, DataSerializer
+from .utils import SingletonMeta, DataSerializer, debug_print
 from .field import BrickField, SteelField, WaterField
 
 #{ BEGIN }#
@@ -30,6 +30,23 @@ class Botzone(object):
         self._globalData = None
         self._requests = []  # 对方的决策
         self._responses = [] # 己方的决策
+
+    @property
+    def data(self):
+        return self._data
+
+    @property
+    def globalData(self):
+        return self._globalData
+
+    @property
+    def requests(self):
+        return self._requests
+
+    @property
+    def responses(self):
+        return self._responses
+
 
     def handle_input(self, stream):
         """
@@ -141,7 +158,7 @@ class Tank2Botzone(Botzone, metaclass=SingletonMeta):
         for blueActions, redActions in zip(allBlueActions, allRedActions):
             self._map.perform(blueActions, redActions)
 
-        if not len(allBlueActions) == len(allRedActions) == 0:
+        if not len(allBlueActions) == 0 and not len(allRedActions) == 0:
             b0, b1 = zip(*allBlueActions)
             r0, r1 = zip(*allRedActions)
             self._pastActions = { # { (side, id): [Action] }

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-02 16:21:56
+# @Last Modified time: 2019-05-03 03:31:44
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -473,6 +473,40 @@ class BattleTank(object):
         assert len(actions) == 2
         return not Action.is_opposite(*actions) # 相反方向，无法闪避，否则可以
 
+
+    def break_brick_for_dodge(self, oppTank):
+        """
+        尝试凿开两边墙壁，以闪避敌人进攻
+
+        适用条件：
+            自己处在 WAIT_FOR_MARCHING 状态，身边没有遇敌的时候
+        """
+        tank = self._tank
+        map_ = self._map
+        oppBase = map_.bases[1 - tank.side]
+        x1, y1 = tank.xy
+        x2, y2 = oppTank.xy
+        actions = []
+        for dx, dy in get_searching_directions(x1, y1, oppBase.x, oppBase.y):
+            # 按照惯例，优先凿开移向对方基地的墙
+            x3 = x1 + dx
+            y3 = y1 + dy
+            if x3 == x2 or y3 == y2: # 方向不对，不能凿开相隔的墙
+                continue
+            # 需要判断两边的墙壁是否为不可凿开的对象
+            if not map_.in_map(x3, y3):
+                continue
+            fields = map_[x3, y3]
+            assert len(fields) == 1, "not suit for current situation"
+            field = fields[0]
+            if isinstance(field, BrickField):
+                action = Action.get_action(x1, y1, x3, y3) + 4 # 射击行为一定成功
+                actions.append(action)
+            else: # 其他都是不适用的
+                continue
+        return actions
+
+
     def move_to(self, oppTank):
         """
         返回 self -> oppTank 的移动
@@ -484,6 +518,7 @@ class BattleTank(object):
         x2, y2 = oppTank.xy
         assert x1 == x2 or y1 == y2, "can't be used when two tanks are not in line"
         return Action.get_action(x1, y1, x2, y2)
+
 
     def shoot_to(self, oppTank):
         """
@@ -582,7 +617,7 @@ class BattleTank(object):
         tank = self._tank
         map_ = self._map
 
-        x1, y1 = tank
+        x1, y1 = tank.xy
         dx, dy = Action.DIRECTION_OF_ACTION_XY[action % 4]
 
         # 墙的位置
@@ -591,7 +626,7 @@ class BattleTank(object):
 
         # 墙后的位置
         x3 = x2 + dx
-        x3 = y2 + dy
+        y3 = y2 + dy
 
         if not map_.in_map(x2, y2) or not map_.in_map(x3, y3):
             return None
@@ -615,12 +650,17 @@ class BattleTank(object):
             return fields3[0]
         else:
             field = fields3[0]
-            if isinstance(field, TankField) and fiele.side != tank.side:
+            if isinstance(field, TankField) and field.side != tank.side:
                 return field
             else:
                 return None
 
         return None
+
+
+    def has_enemy_behind_brick(self, action):
+        return self.get_enemy_behind_brick(action) is not None
+
 
     def get_nearest_enemy(self, block_teammate=False):
         """
@@ -660,7 +700,7 @@ class BattleTank(object):
         return enemies[idx]
 
 
-    def check_is_outer_wall_of_enemy_base(self, field, layer=1):
+    def check_is_outer_wall_of_enemy_base(self, field, layer=2):
         """
         检查一个 field 是否为敌方基地的外墙
         外墙被视为基地外的 layer 层 Brick

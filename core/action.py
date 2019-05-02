@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 20:41:08
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-03 01:57:34
 """
 行为类
 """
@@ -53,10 +53,12 @@ class Action(object):
 
 
     _ACTION_NAMES = [
+
         "Invalid",  "Stay",
         "Up Move",  "Right Move",  "Down Move",  "Left Move",
         "Up Shoot", "Right Shoot", "Down Shoot", "Left Shoot",
-    ]
+
+        ]
 
     @staticmethod
     def is_valid(action): # 是否为有效行为
@@ -108,8 +110,23 @@ class Action(object):
             if (dx, dy) == dxy:
                 return idx
         else:
-            raise Exception("can't move from (%s, %s) to (%s, %s) in one step"
+            raise Exception("can't move from (%s, %s) to (%s, %s) in one turn"
                              % (x1, y1, x2, y2) )
+
+    @staticmethod
+    def get_move_action(x1, y1, x2, y2):
+        """
+        获得 (x1, y1) -> (x2, y2) 的射击行为
+        这个就是对 get_action 的命名，这出于历史遗留问题 ...
+        """
+        return __class__.get_action(x1, y1, x2, y2)
+
+    @staticmethod
+    def get_shoot_action(x1, y1, x2, y2):
+        """
+        获得 (x1, y1) -> (x2, y2) 的射击行为
+        """
+        return __class__.get_action(x1, y1, x2, y2) + 4
 
     @staticmethod
     def get_name(action):

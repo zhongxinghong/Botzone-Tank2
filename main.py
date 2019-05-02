@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:04:40
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 15:05:33
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-03 00:02:22
 
 from core.const import LONG_RUNNING_MODE, SIMULATOR_ENV, MAP_WIDTH, MAP_HEIGHT,\
-                        TANKS_PER_SIDE, SIDE_COUNT, BLUE_SIDE, RED_SIDE
+                    TANKS_PER_SIDE, SIDE_COUNT, BLUE_SIDE, RED_SIDE
 from core.global_ import time, np
 from core.utils import debug_print, simulator_print
 from core.map_ import Tank2Map
@@ -21,9 +21,9 @@ from core.strategy.status import Status
 
 def main(istream=None, ostream=None):
 
-    map_ = Tank2Map(MAP_WIDTH, MAP_HEIGHT)
+    map_ = Tank2Map(MAP_WIDTH, MAP_HEIGHT) # Singleton
 
-    terminal = Tank2Botzone(map_, long_running=LONG_RUNNING_MODE)
+    terminal = Tank2Botzone(map_, long_running=LONG_RUNNING_MODE) # Singleton
 
     istream = istream or BotzoneIstream()
     ostream = ostream or BotzoneOstream()
@@ -39,6 +39,14 @@ def main(istream=None, ostream=None):
 
         if SIMULATOR_ENV:
             map_.debug_print_out()
+
+        if terminal.data is not None:
+            memory = terminal.data["memory"]
+        else:
+            memory = {
+                BLUE_SIDE: None,
+                RED_SIDE: None,
+            }
 
         side = terminal.mySide
         tanks = map_.tanks
@@ -59,10 +67,12 @@ def main(istream=None, ostream=None):
         redPlayer0.set_opponents(bluePlayers)
         redPlayer1.set_opponents(bluePlayers)
 
-        blueTeam = Tank2Team(BLUE_SIDE, bluePlayer0, bluePlayer1)
-        redTeam  = Tank2Team(RED_SIDE, redPlayer0, redPlayer1)
+        blueTeam = Tank2Team(BLUE_SIDE, bluePlayer0, bluePlayer1, map_)
+        redTeam  = Tank2Team(RED_SIDE, redPlayer0, redPlayer1, map_)
         blueTeam.set_opponent_team(redTeam)
         redTeam.set_opponent_team(blueTeam)
+        blueTeam.load_memory(memory[BLUE_SIDE])
+        redTeam.load_memory(memory[RED_SIDE])
 
         if side == BLUE_SIDE:
             myPlayer0  = bluePlayer0
@@ -110,16 +120,20 @@ def main(istream=None, ostream=None):
 
         t2 = time.time()
 
-        debugInfo = {
-            "cost": round(t2-t1, 4),
-            }
-
         data = {
-            "status": [
-                [ bluePlayer0.get_status(), bluePlayer1.get_status(), ],
-                [ redPlayer0.get_status(),  redPlayer1.get_status(),  ],
-            ]
+
+            "memory": [
+                blueTeam.dump_memory(),
+                redTeam.dump_memory()
+            ],
+
         }
+
+        debugInfo = {
+
+            "cost": round(t2-t1, 4),
+
+            }
 
         terminal.make_output(actions, stream=ostream, debug=debugInfo, data=data)
 
