@@ -15,10 +15,6 @@
     },
     {
         "package": "",
-        "file": "../core/const.py"
-    },
-    {
-        "package": "",
         "file": "../core/global_.py"
     },
     {
@@ -43,11 +39,15 @@
     },
     {
         "package": "strategy",
+        "file": "../core/strategy/status.py"
+    },
+    {
+        "package": "strategy",
         "file": "../core/strategy/utils.py"
     },
     {
         "package": "strategy",
-        "file": "../core/strategy/bfs.py"
+        "file": "../core/strategy/search.py"
     },
     {
         "package": "strategy",

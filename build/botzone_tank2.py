@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author:   Rabbit
 # @Filename: botzone_tank2.py
-# @Date:     2019-05-01 02:46:26
-# @Description: 
+# @Date:     2019-05-02 16:28:29
+# @Description: Auto-built single-file Python script for Botzone/Tank2
 """
 MIT License
 
@@ -57,44 +57,6 @@ GAME_STATUS_RED_WIN  = 1
 BLUE_SIDE = 0
 RED_SIDE  = 1
 
-DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0) ) # 上右下左，与行为一致
-
-#{ END 'const.py' }#
-
-
-
-#{ BEGIN 'const.py' }#
-
-#----------------------#
-# Environment Variable #
-#----------------------#
-DEBUG_MODE        = False
-LONG_RUNNING_MODE = False
-SIMULATOR_ENV     = False
-COMPACT_MAP       = False
-SIMULATOR_PRINT   = True
-
-#-------------#
-# Game Config #
-#-------------#
-MAP_HEIGHT     = 9
-MAP_WIDTH      = 9
-SIDE_COUNT     = 2
-TANKS_PER_SIDE = 2
-
-#-------------#
-# Game Status #
-#-------------#
-GAME_STATUS_NOT_OVER = -2
-GAME_STATUS_DRAW     = -1
-GAME_STATUS_BLUE_WIN = 0
-GAME_STATUS_RED_WIN  = 1
-
-BLUE_SIDE = 0
-RED_SIDE  = 1
-
-DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0) ) # 上右下左，与行为一致
-
 #{ END 'const.py' }#
 
 
@@ -105,6 +67,9 @@ import time
 import sys
 import json
 import random
+import pickle
+import base64
+import gzip
 import numpy as np
 from collections import deque
 from pprint import pprint
@@ -178,7 +143,7 @@ class CachedProperty(property):
         obj.__dict__.pop(key, None)
 
 
-class Singleton(type):
+class SingletonMeta(type):
     """
     Singleton Metaclass
     @link https://github.com/jhao104/proxy_pool/blob/428359c8dada998481f038dbdc8d3923e5850c0e/Util/utilClass.py
@@ -187,8 +152,49 @@ class Singleton(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instance:
-            cls._instance[cls] = super(Singleton, cls).__call__(*args)
+            cls._instance[cls] = super(SingletonMeta, cls).__call__(*args)
         return cls._instance[cls]
+
+
+class UniqueIntEnumMeta(type):
+    """
+    使得枚举类内所有的 int 值都增加一个 __offset__ 偏移量
+    使得不同的枚举类可以用同样的 int 值申明 case，但是不同枚举类间，实际的属性值不同不同
+
+    需要在类属性中通过 __offset__ 值申明偏移量
+
+    """
+    def __new__(cls, name, bases, attrs):
+        offset = attrs.get("__offset__", 0) # 默认为 0
+        for k, v in attrs.items():
+            if isinstance(v, int):
+                attrs[k] += offset
+        return super(UniqueIntEnumMeta, cls).__new__(cls, name, bases, attrs)
+
+
+class DataSerializer(object):
+
+    @staticmethod
+    def _unpad(s):
+        return s.rstrip("=")
+
+    @staticmethod
+    def _pad(s):
+        return s + "=" * ( 4 - len(s) % 4 )
+
+    @staticmethod
+    def serialize(obj):
+        return __class__._unpad(
+                    base64.b64encode(
+                        gzip.compress(
+                            pickle.dumps(obj))).decode("utf-8"))
+
+    @staticmethod
+    def deserialize(s):
+        return pickle.loads(
+                    gzip.decompress(
+                        base64.b64decode(
+                            __class__._pad(s).encode("utf-8"))))
 
 #{ END 'utils.py' }#
 
@@ -197,6 +203,9 @@ class Singleton(type):
 #{ BEGIN 'action.py' }#
 
 class Action(object):
+
+    # 推迟决策
+    POSTPONE    = -4 # 用于告知 Team 让队友优先决策
 
     # 空与无效
     DUMMY       = -3 # 额外添加的
@@ -222,6 +231,12 @@ class Action(object):
     DIRECTION_OF_ACTION_Y  = ( -1, 0, 1,  0 )
     DIRECTION_OF_ACTION_XY = ( (0,-1), (1,0), (0,1), (-1,0) )
 
+    # 方便用于迭代
+    MOVE_ACTIONS  = ( MOVE_UP,  MOVE_RIGHT,  MOVE_DOWN,  MOVE_LEFT  )
+    SHOOT_ACTIONS = ( SHOOT_UP, SHOOT_RIGHT, SHOOT_DOWN, SHOOT_LEFT )
+    VALID_ACTIONS = ( STAY, ) + MOVE_ACTIONS + SHOOT_ACTIONS
+
+
     _ACTION_NAMES = [
         "Invalid",  "Stay",
         "Up Move",  "Right Move",  "Down Move",  "Left Move",
@@ -230,7 +245,7 @@ class Action(object):
 
     @staticmethod
     def is_valid(action): # 是否为有效行为
-        return -2 < action <= 7
+        return -1 <= action <= 7
 
     @staticmethod
     def is_stay(action): # 是否为停止行为
@@ -445,7 +460,7 @@ class Map(object):
         return self[x, y]
 
 
-class Tank2Map(Map, metaclass=Singleton):
+class Tank2Map(Map, metaclass=SingletonMeta):
 
     def __init__(self, width, height):
         super().__init__(width, height)
@@ -624,7 +639,6 @@ class Tank2Map(Map, metaclass=Singleton):
         else: # 未知的行为
             raise Exception("unexpected action %s" % action)
 
-
     def perform(self, blue_actions, red_actions):
         """
         执行一回合的行为
@@ -725,6 +739,10 @@ class Tank2Map(Map, metaclass=Singleton):
     def simulate_one_action(self, tank, action):
         """
         只执行其中一架 tank 的行为，其他 tank 均假设为不动
+
+        Input:
+            - tank     TankField/BattleTank   能表明坐标的 tank 对象
+            - action   int                    下回合的行动
         """
         actions = [
             [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
@@ -881,10 +899,81 @@ class Tank2Map(Map, metaclass=Singleton):
 
 #{ BEGIN 'strategy/signal.py' }#
 
-class Signal(object):
-    pass
+class Signal(object, metaclass=UniqueIntEnumMeta):
+
+    __offset__ = 200
+
+    NONE        = 0   # 空信号
+    UNHANDLED   = 1   # 未处理团队信号
+    CANHANDLED  = 2   # 未能处理团队信号
+
+    BREAK_BRICK = 10  # 破墙
 
 #{ END 'strategy/signal.py' }#
+
+
+
+#{ BEGIN 'strategy/status.py' }#
+
+class Status(object, metaclass=UniqueIntEnumMeta):
+
+    __offset__ = 100
+
+    NONE       = 0  # 空状态
+
+    AGGRESSIVE = 1  # 侵略性的
+    DEFENSIVE  = 2  # 防御性的
+    STALEMENT  = 3  # 僵持的
+    DYING      = 4  # 准备要挂了
+    DIED       = 5  # 已经挂了
+
+    REALODING  = 9  # 正在装弹，下回合无法射击
+
+    ENCOUNT_ENEMY     = 11
+    ENCOUNT_ONE_ENEMY = 12
+    ENCOUNT_TWO_ENEMY = 12
+
+    KEEP_ON_MARCHING     = 21  # 继续行军
+    READY_TO_ATTACK_BASE = 22  # 准备拆基地
+    READY_TO_FIGHT_BACK  = 23  # 准备反击
+    READY_TO_DODGE       = 24  # 准备闪避敌人
+    READY_TO_KILL_ENEMY  = 25  # 准备击杀敌人
+    READY_TO_BLOCK_ROAD  = 26  # 准备堵路
+    KEEP_ON_OVERLAPPING  = 27  # 等待与自己重叠的敌人的决策
+    WAIT_FOR_MARCHING    = 28  # 存在风险，等待进攻
+    HUNTING_ENEMY        = 29  # 主动追杀敌军
+
+    ANTICIPATE_TO_KILL_ENEMY = 30 # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
+    BLOCK_ROAD_FOR_OUR_BASE  = 31 # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间
+    SACRIFICE_FOR_OUR_BASE   = 32 # 主动防御时，遇到敌方下一炮打掉基地，自己又恰好能阻挡
+
+    READY_TO_BREAK_BRICK = 40  # 准备破墙，对应 Status.BREAK_BRICK
+
+
+    DEADLOCK_WITH_BLUE_0_AGAINST_BRICK = 41  # 和蓝方 0 号坦克隔墙僵持
+    DEADLOCK_WITH_BLUE_1_AGAINST_BRICK = 42  # 和蓝方 1 号坦克隔墙僵持
+    DEADLOCK_WITH_RED_0_AGAINST_BRICK  = 43  # 和红方 0 号坦克隔墙僵持
+    DEADLOCK_WITH_RED_1_AGAINST_BRICK  = 44  # 和红方 1 号坦克隔墙僵持
+
+
+    __Status_Name_Cache = None
+
+    @staticmethod
+    def get_name(status):
+        """
+        通过状态值自动判定方法
+        """
+        if __class__.__Status_Name_Cache is None:
+            cache = __class__.__Status_Name_Cache = {}
+            for k, v in __class__.__dict__.items():
+                if not k.startswith("__"):
+                    if isinstance(v, int):
+                        key = k.title()
+                        cache[v] = key
+        cache = __class__.__Status_Name_Cache
+        return cache.get(status, None) # 应该保证一定有方法？
+
+#{ END 'strategy/status.py' }#
 
 
 
@@ -933,7 +1022,6 @@ def get_destroyed_fields(tank, action, map):
     return [] # 没有任何对象被摧毁
 '''
 
-
 def is_block_in_route(field, route):
     """
     判断一个 Brick/Base/Tank (具体由寻找路线时的函数决定) 是否为相应路线上，为一个
@@ -972,7 +1060,19 @@ def fake_map_matrix_T_without_enemy(map, mySide):
 
 
 
-#{ BEGIN 'strategy/bfs.py' }#
+#{ BEGIN 'strategy/search.py' }#
+
+# y-axis first / vertical first / aggressive
+DIRECTIONS_URDL = ( (0, -1), ( 1, 0), (0,  1), (-1, 0) ) # 上右下左
+DIRECTIONS_ULDR = ( (0, -1), (-1, 0), (0,  1), ( 1, 0) ) # 上左下右
+DIRECTIONS_DRUL = ( (0,  1), ( 1, 0), (0, -1), (-1, 0) ) # 下右上左
+DIRECTIONS_DLUR = ( (0,  1), (-1, 0), (0, -1), ( 1, 0) ) # 下左上右
+
+# x-axis first / horizontal first / defensive
+DIRECTIONS_RULD = ( ( 1, 0), (0, -1), (-1, 0), (0,  1) ) # 右上左下
+DIRECTIONS_LURD = ( (-1, 0), (0, -1), ( 1, 0), (0,  1) ) # 左上右下
+DIRECTIONS_RDLU = ( ( 1, 0), (0,  1), (-1, 0), (0, -1) ) # 右下左上
+DIRECTIONS_LDRU = ( (-1, 0), (0,  1), ( 1, 0), (0, -1) ) #　左下右上
 
 DEFAULT_BLOCK_TYPES       = ( Field.STEEL, Field.WATER, )
 DEFAULT_DESTROYABLE_TYPES = ( Field.BRICK, )
@@ -992,8 +1092,48 @@ MOVE_ACTION_ON_BFS  = 0  # 上一回合操作标记为搜索
 SHOOT_ACTION_ON_BFS = 1  # 上一回合操作标记为射击
 
 
+def get_searching_directions(x1, y1, x2=None, y2=None, x_axis_first=False):
+    """
+    获得从 (x1, y1) -> (x2, y2) 最优的搜索方向顺序
+
+    Input:
+        - (x1, y1)   起点坐标
+        - (x2, y2)   终点坐标，可以没有，那么将通过 (x1, y1) 在地图中的相对位置，
+                     对应着左上、左下、右上、右下四个区域，确定最佳的搜索顺序
+
+        - x_axis_first   bool   是否采用 x 轴方向优先的搜索方式？默认以垂直方向优先，
+                                也就是如果存在到达目标坐标的两条长度相同的路径，
+                                会优先从 y 轴方向移动过去，即先上下移动，后左右移动。
+                                若选择以水平方向优先，则先左右移动，后上下移动。
+
+                                优先上下移动通常用于侵略，优先左右移动通常用于防御
+
+    """
+    if x2 is None or y2 is None:
+        x3 = MAP_WIDTH  // 2 # 中点 x
+        y3 = MAP_HEIGHT // 2 # 中点 y
+        if   ( x3 - x1 >= 0 ) and ( y3 - y1 >= 0 ):
+            return DIRECTIONS_DRUL if not x_axis_first else DIRECTIONS_RDLU
+        elif ( x3 - x1 >= 0 ) and ( y3 - y1 <= 0 ):
+            return DIRECTIONS_URDL if not x_axis_first else DIRECTIONS_RULD
+        elif ( x3 - x1 <= 0 ) and ( y3 - y1 >= 0 ):
+            return DIRECTIONS_DLUR if not x_axis_first else DIRECTIONS_LDRU
+        elif ( x3 - x1 <= 0 ) and ( y3 - y1 <= 0 ):
+            return DIRECTIONS_ULDR if not x_axis_first else DIRECTIONS_LURD
+    else:
+        if   ( x2 - x1 >= 0 ) and ( y2 - y1 >= 0 ):
+            return DIRECTIONS_DRUL if not x_axis_first else DIRECTIONS_RDLU
+        elif ( x2 - x1 >= 0 ) and ( y2 - y1 <= 0 ):
+            return DIRECTIONS_URDL if not x_axis_first else DIRECTIONS_RULD
+        elif ( x2 - x1 <= 0 ) and ( y2 - y1 >= 0 ):
+            return DIRECTIONS_DLUR if not x_axis_first else DIRECTIONS_LDRU
+        elif ( x2 - x1 <= 0 ) and ( y2 - y1 <= 0 ):
+            return DIRECTIONS_ULDR if not x_axis_first else DIRECTIONS_LURD
+    raise Exception
+
+
 def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
-                         block_types=DEFAULT_BLOCK_TYPES):
+                         block_types=DEFAULT_BLOCK_TYPES, x_axis_first=False):
     """
     BFS 搜索从 start -> end 的最短路径，带权重
     ----------------------------------------------------------------------------
@@ -1012,6 +1152,8 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
         - block_types       [int]       不能够移动到的 field 类型
                                         WARNING:
                                             需要自行指定不能够到达的基地、坦克的类型
+
+        - x_axis_first      bool        是否优先搜索 x 轴方向
 
     Return:
 
@@ -1099,7 +1241,7 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
             dummyTail[1] = node
             break
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, x2, y1, y2, x_axis_first=x_axis_first):
             x, y = node[0]
             x3 = x + dx
             y3 = y + dy
@@ -1125,7 +1267,8 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
 
 def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                           shoot_weight_matrix_T, block_types=DEFAULT_BLOCK_TYPES,
-                          destroyable_types=DEFAULT_DESTROYABLE_TYPES):
+                          destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                          x_axis_first=False):
     """
     BFS 搜索从 start 开始到击中 end 的最短路线，带权重
     ----------------------------------------------------------------------------
@@ -1163,6 +1306,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                                         搜索时，遇到这样的 field 会跳过
                                         WARNING:
                                             需要自行制定可以被摧毁的基地、坦克的类型
+
+        - x_axis_first          bool    是否优先搜索 x 轴方向
 
     Return:
 
@@ -1207,7 +1352,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
     # 哪些位置可以对目标发动射击，即 end 向四个方向伸展开的区域
     matrixCanShoot = np.zeros_like(matrixMap, dtype=np.bool8)
     matrixCanShoot[x2, y2] = True
-    for dx, dy in DIRECTIONS_URDL:
+    for dx, dy in get_searching_directions(x1, y1, x2, y2, x_axis_first=x_axis_first):
         x, y = end
         while True:
             x += dx
@@ -1278,7 +1423,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
         if DEBUG_MODE:
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, y1, x2, y2, x_axis_first=x_axis_first):
             x, y = node[0]
             x3 = x + dx
             y3 = y + dy
@@ -1344,8 +1489,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
     return dummyTail
 
 
-def find_shortest_route_for_move(start, end, matrix_T,
-                                 block_types=DEFAULT_BLOCK_TYPES):
+def find_shortest_route_for_move(start, end, matrix_T, block_types=DEFAULT_BLOCK_TYPES,
+                                 x_axis_first=False):
     """
     搜索移动到目标的最短路线
 
@@ -1363,7 +1508,7 @@ def find_shortest_route_for_move(start, end, matrix_T,
     matrixWeight[matrixMap == Field.WATER] = INFINITY_WEIGHT
 
     dummyTail = _BFS_search_for_move(start, end, matrixMap, matrixWeight,
-                                    block_types=block_types)
+                                    block_types=block_types, x_axis_first=x_axis_first)
 
     route = []
     node = dummyTail
@@ -1382,7 +1527,8 @@ def find_shortest_route_for_move(start, end, matrix_T,
 
 def find_shortest_route_for_shoot(start, end, matrix_T,
                                   block_types=DEFAULT_BLOCK_TYPES,
-                                  destroyable_types=DEFAULT_DESTROYABLE_TYPES):
+                                  destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                                  x_axis_first=False):
     """
     搜索移动并射击掉目标的最短路线
 
@@ -1408,7 +1554,8 @@ def find_shortest_route_for_shoot(start, end, matrix_T,
 
     dummyTail = _BFS_search_for_shoot(start, end, matrixMap, matrixMoveWeight,
                                     matrixShootWeight, block_types=block_types,
-                                    destroyable_types=destroyable_types)
+                                    destroyable_types=destroyable_types,
+                                    x_axis_first=x_axis_first)
     route = []
     node = dummyTail
     while True:
@@ -1463,15 +1610,13 @@ def _get_route_length_by_node_chain(node):
             break
     return get_route_length(route)
 
-#{ END 'strategy/bfs.py' }#
+#{ END 'strategy/search.py' }#
 
 
 
 #{ BEGIN 'strategy/estimate.py' }#
 
-AGGRESSIVE_STATUS = 1
-STALEMATE_STATUS  = 0
-DEFENSIVE_STATUS  = -1
+MINIMAL_TURNS_FOR_ACTIVE_DEFENSIVE_DECISION = 2
 
 
 def assess_aggressive(battler, oppBattler):
@@ -1483,25 +1628,26 @@ def assess_aggressive(battler, oppBattler):
         - oppBattler   BattleTank
 
     Return:
-        - AGGRESSIVE_STATUS   我方处于攻击状态
-        - STALEMATE_STATUS    双方处于僵持状态
-        - DEFENSIVE_STATUS    我方处于防御状态
+        [status]
+        - Status.AGGRESSIVE   我方处于攻击状态
+        - Status.DEFENSIVE    我方处于防御状态
+        - Status.STALEMENT    双方处于僵持状态
     """
     myRoute = battler.get_shortest_attacking_route()
     oppRoute = oppBattler.get_shortest_attacking_route()
     myRouteLen = get_route_length(myRoute)
     oppRouteLen = get_route_length(oppRoute)
-    simulator_print(battler, "delta routeLen:", oppRouteLen - myRouteLen)
+    # debug_print(battler, "delta:", oppRouteLen - myRouteLen)
     # TODO:
     #   阈值不可定的太小，否则可能是错误估计，因为对方如果有防守，
     #   就有可能拖延步数。很有可能需要再动态决策一下，尝试往前预测几步，看看
     #   会不会受到阻碍，然后再下一个定论
     if oppRouteLen - myRouteLen >= 1: # TODO: 阈值多少合理？
-        return AGGRESSIVE_STATUS
+        return Status.AGGRESSIVE
     elif myRouteLen - oppRouteLen > 1: # TODO: 阈值？
-        return DEFENSIVE_STATUS
+        return Status.DEFENSIVE
     else:
-        return STALEMATE_STATUS
+        return Status.STALEMENT
 
 #{ END 'strategy/estimate.py' }#
 
@@ -1550,30 +1696,31 @@ class SingleTankStrategy(Strategy):
 
 class BattleTank(object):
 
-    __instances = {} # { (side, id): instance }
+    _instances = {} # { (side, id): instance }
 
-    def __new__(cls, tank, map, *args, **kwargs):
+    def __new__(cls, tank, map=None, *args, **kwargs):
         """
         以 (side, id) 为主键，缓存已经创建过的作战对象
         使得该对象对于特定的 tank 对象为 Singleton
         """
         key = (tank.side, tank.id)
-        obj = __class__.__instances.get(key)
+        obj = __class__._instances.get(key)
         if obj is None:
+            map_ = map
+            if map_ is None:
+                raise ValueError("map is required at first initialization")
             obj = super(BattleTank, cls).__new__(cls, *args, **kwargs)
-            __class__.__instances[key] = obj
+            __class__._instances[key] = obj
             ## BattleTank.__init__(obj, tank, map) # 在此处初始化
             obj._tank = tank
-            obj._map = map
-            obj._aggressive = False
+            obj._map = map_
             obj.__attackingRoute = None
             ## END BattleTank.__init__
         return obj
 
-    def __init__(self, tank, map):
+    def __init__(self, tank, map=None):
         '''self._tank = tank
         self._map = map
-        self._aggressive = False # 是否具有侵略性
         self.__attackingRoute = None # 缓存变量'''
         pass
 
@@ -1609,14 +1756,6 @@ class BattleTank(object):
     def destroyed(self):
         return self._tank.destroyed
 
-
-    @property
-    def aggressive(self):
-        return self._aggressive
-
-    @property
-    def defensive(self):
-        return not self._aggressive
 
     @property
     def canShoot(self): # 本回合是否可以射击
@@ -1674,10 +1813,10 @@ class BattleTank(object):
 
         route = self.get_shortest_attacking_route()
 
-        if len(route) == 0: # 没有找到路线，这种情况不可能
+        if get_route_length(route) == INFINITY_ROUTE_LENGTH: # 没有找到路线，这种情况不可能
             return Action.STAY
-        elif len(route) == 1:    # 说明 start 和 end 相同，已经到达基地，这种情况也不可能
-            return Action.STAY # 停留不动
+        elif get_route_length(route) == 0: # 说明 start 和 end 相同，已经到达基地，这种情况也不可能
+            return Action.STAY
 
         x1, y1 = tank.xy
         x3, y3, _, _ = route[1] # 跳过 start
@@ -1687,13 +1826,35 @@ class BattleTank(object):
         ## 优先移动 ##
         if map_.is_valid_move_action(tank, action):
             # 但是，如果正前方就是基地，则不移动，只射击
-            for field in self.get_destroyed_fields_if_shoot(action):
-                if isinstance(field, BaseField): # 如果敌人基地在前方
-                    if self.canShoot: # 如果自己可以射击
-                        return action + 4
-                    else: # 不能射击，但是敌人基地就在眼前
-                        # TODO: 可以考虑回避敌人的攻击，如果有的话？
-                        return action
+            x, y = tank.xy
+            while True:
+                x += dx
+                y += dy
+                if not map_.in_map(x, y):
+                    break
+                fields = map_[x, y]
+                if len(fields) == 0:
+                    continue
+                elif len(fields) > 1:
+                    break
+                else:
+                    field = fields[0]
+                    if isinstance(field, (WaterField, EmptyField) ):
+                        continue
+                    elif isinstance(field, SteelField):
+                        break # 钢墙不可以射穿
+                    elif isinstance(field, BrickField): # 土墙认为可以射掉
+                        continue
+                    elif isinstance(field, TankField): # 坦克也认为可以射掉
+                        if field.side == tank.side:
+                            break # 队友坦克不进攻
+                        continue  # 敌方坦克在此处不应该出现，他们应该在上游的决策中被考虑到
+                    elif field is oppBase:
+                        if self.canShoot: # 这个时候如果能够射击，就优先射击
+                            return action + 4
+                    else:
+                        continue
+            # 其他情况仍然优先移动
             return action
 
         ## 遇到墙/敌方基地/坦克，不能移动
@@ -1711,44 +1872,108 @@ class BattleTank(object):
         """
         查找射杀敌方的最短路线
             TODO: 可能需要判断水路
+
+        尚没有被使用过
         """
         tank = self._tank
         map_ = self._map
         side = tank.side
         oppSide = 1 - side
         route = find_shortest_route_for_shoot(
-                        tank.xy,
-                        oppTank.xy,
-                        map_.matrix_T, # 正常地图
-                        block_types=DEFAULT_BLOCK_TYPES+(
-                            Field.BASE + 1 + side,
-                            Field.TANK + 1 + side,
-                            Field.MULTI_TANK,
-                        ),
-                        destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
-                            Field.BASE + 1 + oppSide,
-                            Field.TANK + 1 + oppSide, # 加入地方坦克
-                        ))
+                            tank.xy,
+                            oppTank.xy,
+                            map_.matrix_T, # 正常地图
+                            block_types=DEFAULT_BLOCK_TYPES+(
+                                Field.BASE + 1 + side,
+                                Field.TANK + 1 + side,
+                                Field.MULTI_TANK,
+                            ),
+                            destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
+                                Field.BASE + 1 + oppSide,
+                                Field.TANK + 1 + oppSide, # 加入地方坦克
+                            ),
+                            x_axis_first=True, # 优先左右拦截
+                            )
         return route
 
 
-    def get_route_to_enemy_by_movement(self, oppTank):
+    def get_route_to_enemy_by_movement(self, oppTank, block_teammate=True):
         """
         近身条件下，获得到达对方的路劲
         """
         tank = self._tank
         map_ = self._map
         side = tank.side
+
+        if block_teammate: # 将己方坦克和重叠坦克视为 block
+            block_types = DEFAULT_BLOCK_TYPES+(
+                                Field.BASE + 1 + side,
+                                Field.TANK + 1 + side,
+                                Field.MULTI_TANK,
+                            )
+        else:
+            block_types = DEFAULT_BLOCK_TYPES+(
+                                Field.BASE + 1 + side,
+                            )
+
         route = find_shortest_route_for_move(
                             tank.xy,
                             oppTank.xy,
                             map_.matrix_T,
-                            block_types=DEFAULT_BLOCK_TYPES+(
-                                Field.BASE + 1 + side,
-                                Field.TANK + 1 + side, # 不将对方 Tank 视为 block
-                                Field.MULTI_TANK,
-                            ))
+                            block_types=block_types,
+                            x_axis_first=True, # 优先左右拦截
+                            )
         return route
+
+
+    def get_next_hunting_action(self, oppTank):
+        """
+        下一个追杀敌军的行为
+        """
+        tank = self._tank
+        map_ = self._map
+        side = tank.side
+        oppSide = 1 - side
+
+        route = self.get_shortest_route_to_enemy(oppTank)
+
+        if get_route_length(route) == INFINITY_ROUTE_LENGTH: # 没有找到路线，这种情况不可能
+            return Action.STAY
+        elif get_route_length(route) == 0: # 说明自己和敌方重合，这种情况不应该出现
+            return Action.STAY
+
+        x1, y1 = tank.xy
+        x3, y3, _, _ = route[1] # 跳过 start
+        action = Action.get_action(x1, y1, x3, y3) # move-action
+        dx, dy = Action.DIRECTION_OF_ACTION_XY[action]
+
+        ## 见到敌人就开火，否则移动
+        shootAction = action + 4
+        destroyedFields = [] # 会被用到两次，因此缓存一下
+        if self.canShoot:
+            destroyedFields = self.get_destroyed_fields_if_shoot(action)
+            for field in destroyedFields:
+                if isinstance(field, TankField) and field.side == side: # 有队友，停止射击
+                    break
+            else: # 否则再判断是否应该射击
+                for field in destroyedFields:
+                    if isinstance(field, TankField) and field.side == oppSide:
+                        return shootAction
+            # 到此处说明没有敌人，或者有队友
+
+        ## 优先移动
+        if map_.is_valid_move_action(tank, action):
+            return action
+
+        ## 遇到路障，射击
+        if self.canShoot:
+            for field in destroyedFields:
+                if isinstance(field, TankField) and field.side == side:
+                    return Action.STAY # 遇到队友，等待
+            return shootAction
+
+        ## 也不能射击？于是等待
+        return Action.STAY
 
 
     def has_enemy_around(self):
@@ -1757,8 +1982,9 @@ class BattleTank(object):
         """
         tank = self._tank
         map_ = self._map
+        x1, y1 = tank.xy
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, y1):
             x, y = tank.xy
             while True:
                 x += dx
@@ -1797,10 +2023,11 @@ class BattleTank(object):
         """
         tank = self._tank
         map_ = self._map
+        x1, y1 = tank.xy
 
         enemies = []
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, y1):
             x, y = tank.xy
             while True:
                 x += dx
@@ -1812,7 +2039,7 @@ class BattleTank(object):
                     continue
                 elif len(currentFields) > 1: # 多辆坦克
                     for field in currentFields:
-                        if instance(field, TankField) and field.side != tank.side:
+                        if isinstance(field, TankField) and field.side != tank.side:
                             enemies.append(field)
                 else: # len == 1
                     field = currentFields[0]
@@ -1874,10 +2101,11 @@ class BattleTank(object):
         """
         tank = self._tank
         map_ = self._map
+        oppBase = map_.bases[1 - tank.side]
         x1, y1 = tank.xy
         x2, y2 = oppTank.xy
         actions = []
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, y1, oppBase.x, oppBase.y): # 优先逃跑向对方基地
             x3 = x1 + dx
             y3 = y1 + dy
             if x3 == x2 or y3 == y2: # 逃跑方向不对
@@ -1890,7 +2118,7 @@ class BattleTank(object):
 
     def can_dodge(self):
         """
-        当前地形是否拥有闪避的机会，用来判断小路
+        当前地形是否拥有闪避的机会，用于判断是否处在狭路，与 len( try_dodge ) > 0 不等价
         """
         tank = self._tank
         map_ = self._map
@@ -1898,7 +2126,7 @@ class BattleTank(object):
 
         actions = []
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x, y):
             x3 = x + dx
             y3 = y + dy
             moveAction = Action.get_action(x, y, x3, y3)
@@ -1913,30 +2141,34 @@ class BattleTank(object):
         assert len(actions) == 2
         return not Action.is_opposite(*actions) # 相反方向，无法闪避，否则可以
 
-
-    def shoot_to(self, oppTank):
+    def move_to(self, oppTank):
         """
-        返回 self -> oppTank 的射击行为
+        返回 self -> oppTank 的移动
 
         Input:
-            - oppTank   TankField/BattleTank    能够通过 x, y, xy 获取坐标值的坦克对象
-
-        Return:
-            - action   int
+            enemy   TankField/BattleTank    所有带坐标的 tank 对象
         """
         x1, y1 = self._tank.xy
         x2, y2 = oppTank.xy
-        return Action.get_action(x1, y1, x2, y2) + 4 # move -> shoot !
+        assert x1 == x2 or y1 == y2, "can't be used when two tanks are not in line"
+        return Action.get_action(x1, y1, x2, y2)
+
+    def shoot_to(self, oppTank):
+        """
+        返回 self -> oppTank 的射击行为，相当于 move + 4
+        """
+        return self.move_to(oppTank) + 4
 
 
     def get_destroyed_fields_if_shoot(self, action):
         """
-        如果一个 move -> shoot 可以摧毁那些对象？
-
-        用于 move 不安全而又不想白白等待的情况，尝试采用进攻开路
+        如果向 action 对应的方向射击，那么可以摧毁什么东西？
+        ------------------------------------------------------------
+        主要用于 move 不安全而又不想白白等待的情况，尝试采用进攻开路
+        也可以用于其他问题的判断
 
         Input:
-            - action   int   原始的移动行为（事实上也可以是射击 ...）
+            - action   int   原始的移动行为（虽然事实上也可以是射击 :)
 
         Return:
             - fields   [Field]   将被摧毁的对象
@@ -1968,6 +2200,148 @@ class BattleTank(object):
                     return fields
         return []
 
+
+    def is_face_to_enemy_base(self):
+        """
+        是否直面对方基地，没有任何障碍阻挡，用于特殊决策！
+        """
+        tank = self._tank
+        map_ = self._map
+        oppSide = 1 - tank.side
+        oppBase = map_.bases[oppSide]
+        x1, y1 = tank.xy
+        x2, y2 = oppBase.xy
+        for dx, dy in get_searching_directions(x1, y1, x2, y2):
+            x, y = tank.xy
+            while True:
+                x += dx
+                y += dy
+                if not map_.in_map(x, y):
+                    break
+                fields = map_[x, y]
+                if len(fields) == 0:
+                    continue
+                elif len(fields) > 1:
+                    break # 两个坦克
+                else:
+                    field = fields[0]
+                    if isinstance(field, (WaterField, EmptyField) ):
+                        continue # 非 block 情况
+                    elif field is oppBase:
+                        return True
+                    else:
+                        break
+        return False
+
+
+    def get_enemy_behind_brick(self, action):
+        """
+        返回相应行为的方向后的围墙后的敌人
+
+        仅仅对应于 坦克|土墙|坦克  的相邻情况
+
+        Input:
+            - action   int   移动/射击行为，确定方向
+
+        Return:
+            - tank    TankField/None    敌人对应的 tank 对象，多个敌人只返回一个
+                                        情况不符则返回 None
+        """
+        tank = self._tank
+        map_ = self._map
+
+        x1, y1 = tank
+        dx, dy = Action.DIRECTION_OF_ACTION_XY[action % 4]
+
+        # 墙的位置
+        x2 = x1 + dx
+        y2 = y1 + dy
+
+        # 墙后的位置
+        x3 = x2 + dx
+        x3 = y2 + dy
+
+        if not map_.in_map(x2, y2) or not map_.in_map(x3, y3):
+            return None
+
+        fields2 = map_[x2, y2]
+        if len(fields2) == 0:
+            return None
+        elif len(fields2) > 1:
+            return None
+        else:
+            field = fields2[0]
+            if isinstance(field, BrickField):
+                pass
+            else:
+                return None
+
+        fields3 = map_[x3, y3]
+        if len(fields3) == 0:
+            return None
+        elif len(fields3) > 1:
+            return fields3[0]
+        else:
+            field = fields3[0]
+            if isinstance(field, TankField) and fiele.side != tank.side:
+                return field
+            else:
+                return None
+
+        return None
+
+    def get_nearest_enemy(self, block_teammate=False):
+        """
+        获得最近的敌人，移动距离
+
+        Return:
+            - enemy   TankField
+        """
+        tank = self._tank
+        map_ = self._map
+
+        _enemies = map_.tanks[1 - tank.side]
+        enemies = [ enemy for enemy in _enemies if not enemy.destroyed ] # 已经被摧毁的敌人就不考虑了
+
+        if len(enemies) == 0: # 胜利？
+            return None
+        if len(enemies) < 2:
+            return enemies[0]
+
+        routes = [ self.get_route_to_enemy_by_movement(enemy) for enemy in enemies ]
+        routesLen = [ get_route_length(route) for route in routes ]
+
+        if all( length == INFINITY_ROUTE_LENGTH for length in routesLen ): # 均不可到达？
+            routes = [ self.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+                            for enemy in enemies ] # 因为队友阻塞 ?
+            routesLen = [ get_route_length(route) for route in routes ]
+
+        routeLenWithEnemyList = [
+            (length, enemy) for length, enemy in zip(routesLen, enemies)
+                    if length != INFINITY_ROUTE_LENGTH # 队友阻塞导致 -1 需要去掉
+        ]
+        # debug_print(routeLenWithEnemyList)
+
+        idx = routeLenWithEnemyList.index(
+                    min(routeLenWithEnemyList, key=lambda tup: tup[0]) )
+
+        return enemies[idx]
+
+
+    def check_is_outer_wall_of_enemy_base(self, field, layer=1):
+        """
+        检查一个 field 是否为敌方基地的外墙
+        外墙被视为基地外的 layer 层 Brick
+        """
+        if not isinstance(field, BrickField):
+            return False
+        map_ = self._map
+        tank = self._tank
+        oppBase = map_.bases[1 - tank.side]
+        x1, y1 = oppBase.xy
+        x2, y2 = field.xy
+        return ( np.abs( x1 - x2 ) <= layer and np.abs( y1 - y2 ) <= layer )
+
 #{ END 'tank.py' }#
 
 
@@ -1989,9 +2363,11 @@ class Tank2Player(Player):
         self._tank = tank
         self._map = map
         self._battler = BattleTank(tank, map)
+        self._team = None
         self._teammate = None
         self._opponents = None
         self._pastActions = past_actions
+        self._status = set() #　当前的状态，可以有多个
 
     @property
     def side(self):
@@ -2013,6 +2389,8 @@ class Tank2Player(Player):
     def tank(self):
         return self._tank
 
+    def set_team(self, team):
+        self._team = team
 
     def set_teammate(self, player):
         """
@@ -2034,6 +2412,34 @@ class Tank2Player(Player):
         for player in opponents:
             assert isinstance(player, self.__class__) and player.side != self.side
         self._opponents = opponents
+
+    def get_status(self):
+        return self._status
+
+    def set_status(self, *status):
+        """
+        添加一个或多个状态
+        """
+        for _status in status:
+            self._status.add(_status)
+
+    def remove_status(self, status):
+        """
+        删除状态
+        """
+        self._status.discard(status) # remove_if_exists
+
+    def clear_status(self):
+        """
+        情况所有状态
+        """
+        self._status.clear()
+
+    def has_status(self, status):
+        """
+        检查是否存在某种状态
+        """
+        return status in self._status
 
     def get_past_actions(self):
         return self._pastActions
@@ -2061,7 +2467,7 @@ class Tank2Player(Player):
         # 1. 需要考虑移动后恰好被对方打中
         # -------------------------
         if Action.is_move(action):
-            oppBattlers = [BattleTank(oppTank, map_) for oppTank in map_.tanks[1 - tank.side]]
+            oppBattlers = [ player.battler for player in self._opponents ]
             riskFreeOpps = []
             for oppBattler in oppBattlers:
                 if not oppBattler.canShoot: # 对手本回合无法射击，则不必担心
@@ -2091,7 +2497,7 @@ class Tank2Player(Player):
             for oppTank in map_.tanks[1 - tank.side]:
                 if oppTank.destroyed:
                     continue
-                oppBattler = BattleTank(oppTank, map_)
+                oppBattler = BattleTank(oppTank)
                 for oppAction in range(Action.STAY, Action.MOVE_LEFT + 1): # 任意移动行为
                     if not map_.is_valid_action(oppTank, oppAction):
                         continue
@@ -2110,11 +2516,51 @@ class Tank2Player(Player):
         return True # 默认安全？
 
 
+    def is_safe_to_close_to_this_enemy(self, oppBattler):
+        """
+        下回合接近某个敌人是否安全？
+        ---------------------------
+        用于双方相遇 (且敌人无法射击)，我方试图接近他的时候
+
+        这种情况下需要判断周围是否有敌人攻击我
+
+        """
+        tank = self._tank
+        map_ = self._map
+        battler = self._battler
+
+        if oppBattler.canShoot: # 可以射击，必定不安全，还是检查一下
+            return False
+
+        action = battler.move_to(oppBattler)
+
+        if map_.is_valid_move_action(tank, action):
+            for _oppBattler in [ player.battler for player in self._opponents ]: # 找到另一个敌人
+                if _oppBattler.destroyed: # 输了就不算
+                    continue
+                if _oppBattler is oppBattler: # 排除目前这个敌人
+                    continue
+                if not _oppBattler.canShoot: # 本回合不能攻击的不算
+                    continue
+                # 开始模拟，反正就一架坦克
+                map_.simulate_one_action(tank, action)
+                for enemy in _oppBattler.get_enemies_around():
+                    if enemy is tank: # 我方坦克将出现在它旁边，并且它可以射击
+                        map_.revert()
+                        return False # 可能被偷袭
+                map_.revert()
+            else: # 此处判断不会被偷袭
+                return True
+        else:
+            return False # 不能移动，当然不安全 ...
+
+
     def try_make_decision(self, action, instead=Action.STAY):
         """
         用这个函数提交决策
         如果这个决策被判定是危险的，那么将提交 instead 行为
         """
+
         if not Action.is_valid(action):
             return instead
         elif not self.is_safe_action(action):
@@ -2122,164 +2568,364 @@ class Tank2Player(Player):
         else:
             return action
 
-
-    def make_decision(self):
+    def make_decision(self, signal=Signal.NONE):
         """
-        做决策，返回一个行为的编号
+        make_decision 的修饰
+
+        - 清除所有旧有状态
+        - 统一处理回复信号
+        """
+        self.clear_status() # 先清除所有的状态
+
+        res = self._make_decision(signal)
+
+        if isinstance(res, (tuple, list)) and len(res) == 2:
+            outputSignal = res[1]
+            action = res[0]
+        else:
+            outputSignal = Signal.NONE
+            action = res
+
+        inputSignal = signal
+
+        if inputSignal != Signal.NONE and outputSignal == Signal.NONE:
+            outputSignal = Signal.UNHANDLED # 没有回复团队信号
+
+        return ( action, outputSignal )
+
+
+    def _make_decision(self, signal):
+        """
+        真正的 make_decision 决策下一步的行为
+
+        Input:
+            - signal   int   团队信号
 
         Return:
             - action   int   行为编号，如果已经输了，则返回 Action.INVALID
         """
+        teammate = self._teammate
+        tank     = self._tank
+        map_     = self._map
+        battler  = self._battler
+
         if self.defeated:
+            self.set_status(Status.DIED)
             return Action.INVALID
 
-        tank    = self._tank
-        map_    = self._map
-        battler = self._battler
+        if not battler.canShoot:
+            self.set_status(Status.REALODING)
 
-        ## 观察队友情况
+        #///////////#
+        #  无脑进攻  #
+        #///////////#
 
-        ## 周围有敌人时
+
+        # 首先当然是拆基地！！
+        #----------------------
+        # 无脑进攻区域
+        # ---------------------
+        if battler.is_face_to_enemy_base() and battler.canShoot:
+            self.set_status(Status.READY_TO_ATTACK_BASE) # 特殊状态
+            return battler.get_next_attack_action() # 必定是射击 ...
+
+
+        #/////////////#
+        #  预警或反击  #
+        #/////////////#
+
+        # 周围有敌人时
+        #-------------------
         aroundEnemies = battler.get_enemies_around()
         if len(aroundEnemies) > 0:
+            self.set_status(Status.ENCOUNT_ENEMY)
             if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
-                oppBattlers = [BattleTank(t, map_) for t  in aroundEnemies]
-                if all( oppBattler.canShoot for oppBattler in oppBattlers ):
-                    # 如果两者都有弹药，有凉了 ...
-                    # raise NotImplementedError
-                    return self.try_make_decision(battler.shoot_to(oppBattlers[0]),
-                                self.try_make_decision(battler.shoot_to(oppBattlers[1])),
-                                    self.try_make_decision(battler.get_next_attack_action()))
-                    return Action.STAY
-                else:
-                    for oppBattler in oppBattlers:
-                        if oppBattler.canShoot:
-                            actions = battler.try_dodge(oppBattler)
-                            if len(actions) == 0: # 不能闪避
-                                return self.try_make_decision(battler.shoot_to(oppBattler))
-                            elif actions == 1:
-                                return self.try_make_decision(actions[0])
-                            else:
-                                return self.try_make_decision(actions[0],
-                                            self.try_make_decision(actions[1]))
-            else: # len(aroundEnemies) == 1:
-                oppTank = aroundEnemies[0]
-                oppBattler = BattleTank(oppTank, map_)
-
-                # 根据当时的情况，评估侵略性
-                status = assess_aggressive(battler, oppBattler)
-
-                # 侵略模式
-                #----------
-                # 1. 优先拆家
-                # 2. 只在必要的时刻还击
-                # 3. 闪避距离不宜远离拆家路线
-                if status == AGGRESSIVE_STATUS:
-                    if not oppBattler.canShoot:
-                        # 如果能直接打死，那当然是不能放弃的！！
-                        if len( oppBattler.try_dodge(battler) ) == 0: # 必死
-                            return self.try_make_decision(battler.shoot_to(oppBattler),
-                                        self.try_make_decision(battler.get_next_attack_action()))
-                        attackAction = battler.get_next_attack_action() # 其他情况，优先进攻，不与其纠缠
-                        action = self.try_make_decision(attackAction)
-                        if Action.is_stay(action): # 存在风险
-                            if Action.is_stay(attackAction): # 原本就是停留的
-                                return action
-                            elif Action.is_move(attackAction):
-                                # 原本移动或射击，因为安全风险而变成停留，这种情况可以尝试射击，充分利用回合数
-                                fields = battler.get_destroyed_fields_if_shoot(attackAction)
-                                route = battler.get_shortest_attacking_route()
-                                for field in fields:
-                                    if is_block_in_route(field, route): # 为 block 对象，该回合可以射击
-                                        return self.try_make_decision(battler.shoot_to(field), action)
-                                return action
-                            else:
-                                return action # 不然就算了
-                        return self.try_make_decision(battler.get_next_attack_action(),
-                                    self.try_make_decision(battler.shoot_to(oppBattler)))
-                    else: # 对方有炮弹，先尝试闪避，如果闪避恰好和侵略路线一致，就闪避，否则反击
-                        defenseAction = battler.shoot_to(oppBattler) # 不需检查安全性，这就是最安全的行为！
-                        actions = battler.try_dodge(oppTank)
+                assert len(aroundEnemies) == 2
+                # 首先判断是否为真正的双人夹击
+                enemy1, enemy2 = aroundEnemies
+                x, y = tank.xy
+                x1, y1 = enemy1.xy
+                x2, y2 = enemy2.xy
+                if x1 == x2 == x:
+                    if (y > y1 and y > y2) or (y < y1 and y < y2):
+                        self.set_status(Status.ENCOUNT_ONE_ENEMY)
+                        pass # 实际可视为一个人
+                elif y1 == y2 == y:
+                    if (x > x1 and x > x2) or (x < x1 and x < x2):
+                        self.set_status(Status.ENCOUNT_ONE_ENEMY)
+                        pass
+                else: # 真正的被夹击
+                    self.set_status(Status.ENCOUNT_TWO_ENEMY)
+                    oppBattlers = [ BattleTank(t) for t  in aroundEnemies ]
+                    if all( oppBattler.canShoot for oppBattler in oppBattlers ):
+                        # 如果两者都有弹药，可能要凉了 ...
+                        self.set_status(Status.DYING)
+                        if battler.canShoot:
+                            # TODO: 这种情况下有选择吗？
+                            self.set_status(Status.READY_TO_FIGHT_BACK)
+                            return battler.shoot_to(enemy1) # 随便打一个？
+                    elif all( not oppBattler.canShoot for oppBattler in oppBattlers ):
+                        # 均不能进攻的话，优先闪避到下回合没有敌人的位置（优先考虑拆家方向）
+                        firstMoveAction = tuple()
                         attackAction = battler.get_next_attack_action()
-                        for action in actions:
-                            if Action.is_move(action) and Action.is_same_direction(action, attackAction):
-                                return self.try_make_decision(action, defenseAction)
-                        return defenseAction
+                        if Action.is_move(attackAction): # 如果是移动行为
+                            firstMoveAction = ( attackAction, )
+                        for action in firstMoveAction + Action.MOVE_ACTIONS:
+                            if map_.is_valid_move_action(tank, action):
+                                map_.simulate_one_action(tank, action)
+                                if len( battler.get_enemies_around() ) < 2: # 一个可行的闪避方向
+                                    map_.revert()
+                                    self.set_status(Status.READY_TO_DODGE)
+                                    return action
+                                map_.revert()
+                        # 均不能闪避，应该是处在狭道内，则尝试任意攻击一个
+                        if battler.canShoot:
+                            # TODO: 是否有选择？
+                            self.set_status(Status.READY_TO_FIGHT_BACK)
+                            return battler.shoot_to(enemy1) # 随便打一个
+                    else: # 有一个能射击，则反击他
+                        for oppBattler in oppBattlers:
+                            if oppBattler.canShoot: # 找到能射击的敌人
+                                actions = battler.try_dodge(oppBattler)
+                                if len(actions) == 0: # 不能闪避
+                                    if battler.canShoot:
+                                        self.set_status(Status.READY_TO_FIGHT_BACK)
+                                        return battler.shoot_to(oppBattler)
+                                    else: # 要凉了 ...
+                                        break
+                                elif len(actions) == 1:
+                                    action = self.try_make_decision(actions[0])
+                                else:
+                                    action = self.try_make_decision(actions[0],
+                                                self.try_make_decision(actions[1]))
+                                if Action.is_move(action): # 统一判断
+                                    self.set_status(Status.READY_TO_DODGE)
+                                    return action
+                                # 没有办法？尝试反击
+                                if battler.canShoot:
+                                    self.set_status(Status.READY_TO_FIGHT_BACK)
+                                    return battler.shoot_to(oppBattler)
+                                else: # 要凉了
+                                    break
+                        # 没有办法对付 ..
+                        self.set_status(Status.DYING)
+                    # 无所谓的办法了...
+                    return self.try_make_decision(battler.get_next_attack_action())
 
-                # 防御模式
-                #----------
-                # 1. 优先对抗，特别是当对方必死的时候
-                # 2. 否则等待
-                # 3. TODO: 如何拖住对方？或者反杀？
-                #
-                # elif status == DEFENSIVE_STATUS:
-                else: # status == DEFENSIVE_STATUS or status == STALEMATE_STATUS:
-                    attackAction = self.try_make_decision(battler.get_next_attack_action()) # 默认的侵略行为
-                    if not oppBattler.canShoot: # 对方不能射击，则进攻
-                        # TODO: 或者前进？？？
-                        if len( oppBattler.try_dodge(battler) ) == 0:
-                            if battler.canShoot: # 必死
-                                return battler.shoot_to(oppBattler)
-                            else: # 对方通常会闪避，这时候判断和对方的距离，考虑是否前进
-                                route = battler.get_route_to_enemy_by_movement(oppBattler)
-                                routeLen = get_route_length(route)
-                                assert routeLen > 0, "unexpected overlapping enemy"
-                                if routeLen == 1: # 和对方相邻
-                                    return Action.STAY # 原地等待，对方就无法通过
-                                elif routeLen == 2: # 和对方相隔一个格子
-                                    # TODO: 可以前进也可以等待，这个可能需要通过历史行为分析来确定
-                                    return Action.STAY # 原地等待，对方就必定无法通过
-                                else: # if routeLen > 2: # 和对方相隔两个以上的格子
-                                    # 有可能是水路
-                                    x1, y1 = battler.xy
-                                    x2, y2 = oppBattler.xy
-                                    action = Action.get_action(x1, y1, x2, y2)
-                                    if map_.is_valid_move_action(tank, action):
-                                        # 在防止别的坦克从旁边偷袭的情况下，往前移动
-                                        return self.try_make_decision(action)
-                                    else: #可能是隔着水路
-                                        return Action.STAY
-                        else: # 对方可以闪避，可以认为对方大概率会闪避，除非是无脑bot
-                            # 在这种情况下仍然要优先射击，因为如果对方不闪避，就会被打掉
-                            # 如果对方闪避，对方的侵略路线就会加长来去的两步（假设对方最优的
-                            # 路线是通过我方坦克，且没有第二条可选路线），因此下一步很可能会
-                            # 回来（因为那个时候我方坦克没有炮），在这种情况下我方坦克可能以
-                            # 警戒的状态原地不动，因此最后局面又回到原始的样子
-                            if battler.canShoot:
-                                return battler.shoot_to(oppBattler)
-                            else: # 我方也不能射击，这时候对方可能会前移
-                                route = battler.get_route_to_enemy_by_movement(oppBattler)
-                                routeLen = get_route_length(route)
-                                if routeLen == 1: # 和对方相邻
-                                    return Action.STAY # 原地等待
-                                elif routeLen == 2: # 和对方相差一格，这个时候需要注意
-                                    # TODO:
-                                    # 如果对方绕路呢？
-                                    return Action.STAY # 原地等待最保守
-                    else: # 对方可以射击
-                        if battler.canShoot: # 优先反击
+            # 当前情况：
+            # ---------
+            # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
+            # 2. 敌人数量为 1
+            if len(aroundEnemies) == 1:
+                oppTank = aroundEnemies[0]
+            else: # len(aroundEnemies) == 2:
+                oppTank = battler.get_nearest_enemy()
+            oppBattler = BattleTank(oppTank)
+
+            # 根据当时的情况，评估侵略性
+            status = assess_aggressive(battler, oppBattler)
+            self.set_status(status)
+
+            # 侵略模式
+            #----------
+            # 1. 优先拆家
+            # 2. 只在必要的时刻还击
+            # 3. 闪避距离不宜远离拆家路线
+            if status == Status.AGGRESSIVE:
+                if not oppBattler.canShoot:
+                    # 如果能直接打死，那当然是不能放弃的！！
+                    if len( oppBattler.try_dodge(battler) ) == 0: # 必死
+                        if battler.canShoot:
+                            self.set_status(Status.READY_TO_KILL_ENEMY)
                             return battler.shoot_to(oppBattler)
-                        else: # 只好闪避
-                            actions = battler.try_dodge(oppBattler)
-                            if len(actions) == 0: # ??? 这种情况在预警的时候就要知道了
-                                return attackAction # 随便打打吧 ...
-                            elif len(actions) == 1:
-                                return self.try_make_decision(actions[0], attackAction)
-                            else: # len(actions) == 2:
-                                return self.try_make_decision(actions[0],
-                                            self.try_make_decision(actions[1]),
-                                                attackAction)
+                    attackAction = battler.get_next_attack_action() # 其他情况，优先进攻，不与其纠缠
+                    realAction = self.try_make_decision(attackAction) # 默认的进攻路线
+                    if Action.is_stay(realAction): # 存在风险
+                        if Action.is_move(attackAction):
+                            # 原本移动或射击，因为安全风险而变成停留，这种情况可以尝试射击，充分利用回合数
+                            # TODO:
+                            #   实际上，很多时候最佳路线选择从中线进攻，但从两侧进攻也是等距离的，
+                            #   在这种情况下，由于采用从中线的进攻路线，基地两侧的块并不落在线路上，因此会被
+                            #   忽略，本回合会被浪费。但是进攻基地两侧的块往往可以减短路线。因此此处值得进行
+                            #   特殊判断
+                            fields = battler.get_destroyed_fields_if_shoot(attackAction)
+                            route = battler.get_shortest_attacking_route()
+                            for field in fields:
+                                if is_block_in_route(field, route): # 为 block 对象，该回合可以射击
+                                    action = self.try_make_decision(battler.shoot_to(field))
+                                    if Action.is_shoot(action):
+                                        self.set_status(Status.KEEP_ON_MARCHING)
+                                        return action
+                            # TODO: 此时开始判断是否为基地外墙，如果是，则射击
+                            for field in fields:
+                                if battler.check_is_outer_wall_of_enemy_base(field):
+                                    action = self.try_make_decision(battler.shoot_to(field))
+                                    if Action.is_shoot(action):
+                                        self.set_status(Status.KEEP_ON_MARCHING)
+                                        return action
+                        # 其余情况照常
+                        return realAction
+                    # 否则不予理会，直接移动或者反击
+                    action = self.try_make_decision(battler.get_next_attack_action())
+                    if not Action.is_stay(action):
+                        self.set_status(Status.KEEP_ON_MARCHING)
+                        return action
+                    action = self.try_make_decision(battler.shoot_to(oppBattler))
+                    if Action.is_shoot(action):
+                        self.set_status(Status.READY_TO_FIGHT_BACK)
+                        return action
+                else: # 对方有炮弹，先尝试闪避，并且要尽量往和进攻路线一致的方向闪避，否则才反击
+                    defenseAction = Action.STAY
+                    if battler.canShoot:
+                        defenseAction = battler.shoot_to(oppBattler)
+                    actions = battler.try_dodge(oppTank)
+                    attackAction = battler.get_next_attack_action()
+                    for action in actions:
+                        if Action.is_move(action) and Action.is_same_direction(action, attackAction):
+                            realAction = self.try_make_decision(action) # 风险评估
+                            if Action.is_move(realAction):
+                                self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                return realAction # 闪避加行军
+                    # 没有最佳的闪避方案，仍然尝试闪避
+                    if len(actions) == 0: # 采用后续方案
+                        action = Action.STAY
+                    elif len(actions) == 1:
+                        action = self.try_make_decision(actions[0])
+                    elif len(actions) == 2:
+                        action = self.try_make_decision(actions[0],
+                                    self.try_make_decision(actions[1]))
+                    if Action.is_move(action): # 统一处理
+                        self.set_status(Status.READY_TO_DODGE)
+                        return action
+                    # 不能闪避，只能还击
+                    if Action.is_shoot(defenseAction):
+                        self.set_status(Status.READY_TO_FIGHT_BACK)
+                    else: # 没有炮弹，凉了 ...
+                        self.set_status(Status.DYING)
+                    return defenseAction
+                # 所有其他的情况？
+                return Action.STAY
 
-                # 僵持模式？
-                #--------------
-                # 双方进攻距离相近，可能持平
-                # # TODO:
-                #   观察队友？支援？侵略？
-                # 1. 优先防御
-                # 2. ....
-                #
-                # elif status == STALEMATE_STATUS:
 
+            # 防御模式
+            #----------
+            # 1. 如果对方下回合必死，那么射击
+            # 2. 优先堵路，距离远则尝试逼近
+            # 3. 必要的时候对抗
+            # 4. 距离远仍然优先
+            #
+            # elif status == DEFENSIVE_STATUS:
+            else: # status == DEFENSIVE_STATUS or status == STALEMATE_STATUS:
+                # attackAction = self.try_make_decision(battler.get_next_attack_action()) # 默认的侵略行为
+                if not oppBattler.canShoot:
+
+                    if len( oppBattler.try_dodge(battler) ) == 0:
+                        if battler.canShoot: # 必死情况
+                            self.set_status(Status.READY_TO_KILL_ENEMY)
+                            return battler.shoot_to(oppBattler)
+                    #
+                    # 不能马上打死，敌人又无法攻击
+                    #-------------------------------
+                    # 优先堵路，根据双方距离判断
+                    #
+                    _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                    routeLen = get_route_length(_route)
+                    assert routeLen != INFINITY_ROUTE_LENGTH, "route not found ?" # 必定能找到路！
+                    assert routeLen > 0, "unexpected overlapping enemy, or "
+                    if routeLen == 1: # 双方相邻，选择等待
+                        self.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return Action.STAY
+                    elif routeLen > 2: # 和对方相隔两个格子以上
+                        if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全逼近
+                            action = battler.move_to(oppBattler)
+                            self.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路 ...
+                            return action
+                        else:
+                            self.set_status(Status.READY_TO_BLOCK_ROAD)
+                            return Action.STAY # 否则只好等额爱
+                    else: # routeLen == 2:
+                        # 相距一个格子，可以前进也可以等待，均有风险
+                        #----------------------------------------
+                        # 1. 如果对方当前回合无法闪避，下一回合最多只能接近我
+                        #    - 如果对方下回合可以闪避，那么我现在等待是意义不大的，不如直接冲上去和他重叠
+                        #    - 如果对方下回合仍然不可以闪避，那么我就选择等待，反正它也走不了
+                        # 2. 如果对方当前回合可以闪避，那么默认冲上去和他重叠
+                        #    - 如果我方可以射击，那么对方应该会判定为闪避，向两旁走，那么我方就是在和他逼近
+                        #    - 如果我方不能射击，对方可能会选择继续进攻，如果对方上前和我重叠，就可以拖延时间
+                        if len( oppBattler.try_dodge(battler) ) == 0:
+                            # 对手当前回合不可闪避，当然我方现在也不能射击。现在假设他下一步移向我
+                            action = oppBattler.move_to(battler) # 对方移向我
+                            if map_.is_valid_move_action(oppBattler, action):
+                                map_.simulate_one_action(oppBattler, action) # 提交模拟
+                                if len( oppBattler.try_dodge(battler) ) == 0:
+                                    # 下回合仍然不可以闪避，说明可以堵路
+                                    map_.revert()
+                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return Action.STAY
+                                map_.revert()
+                                # 否则直接冲上去
+                                if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全移动
+                                    moveAction = battler.move_to(oppBattler)
+                                    self.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路
+                                    return moveAction
+                                else: # 冲上去不安全，那就只能等到了
+                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return Action.STAY
+                        else:
+                            # 对手当前回合可以闪避，那么尝试冲上去和他重叠
+                            # TODO:
+                            #   可能弄巧成拙 5cca97a4a51e681f0e8ad227
+                            #
+                            #   这个问题需要再根据情况具体判断！
+                            #
+                            '''
+                            if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全重叠
+                                moveAction = battler.move_to(oppBattler)
+                                self.set_status(Status.READY_TO_BLOCK_ROAD)
+                                return moveAction
+                            else: # 有风险，考虑等待
+                                self.set_status(Status.READY_TO_BLOCK_ROAD)
+                                return Action.STAY
+                            '''
+                            #
+                            # TODO:
+                            #   是否应该根据战场情况进行判断，比如停下来堵路对方一定无法走通？
+                            #
+                            #   假设自己为钢墙然后搜索对方路径？
+                            #
+                            self.set_status(Status.READY_TO_BLOCK_ROAD)
+                            return Action.STAY
+                # 对方可以射击
+                else:
+                    if battler.canShoot: # 优先反击
+                        self.set_status(Status.READY_TO_FIGHT_BACK)
+                        return battler.shoot_to(oppBattler)
+                    # 不能反击，只好闪避
+                    actions = battler.try_dodge(oppBattler)
+                    if len(actions) == 0:
+                        self.set_status(Status.DYING) # 凉了 ...
+                    elif len(actions) == 1:
+                        action = self.try_make_decision(actions[0])
+                    else: # len(actions) == 2:
+                        action = self.try_make_decision(actions[0],
+                                        self.try_make_decision(actions[1]))
+                    if Action.is_move(action): # 统一判断
+                        self.set_status(Status.READY_TO_DODGE)
+                        return action
+                    # 否则就凉了 ...
+                    self.set_status(Status.DYING)
+                # 所有其他情况
+                return Action.STAY
+
+            # 僵持模式？
+            #--------------
+            # 双方进攻距离相近，可能持平
+            # # TODO:
+            #   观察队友？支援？侵略？
+            # 1. 优先防御
+            # 2. ....
+            #
+            # elif status == STALEMATE_STATUS:
 
 
         # 与敌人重合时，一般只与一架坦克重叠
@@ -2289,26 +2935,37 @@ class Tank2Player(Player):
         #
         if battler.has_overlapping_enemy():
             oppTank = battler.get_overlapping_enemy()
-            oppBattler = BattleTank(oppTank, map_)
+            oppBattler = BattleTank(oppTank)
 
             # 评估进攻路线长度，以确定采用保守策略还是入侵策略
             status = assess_aggressive(battler, oppBattler)
+            self.set_status(status)
 
             # 侵略模式
             #-----------
             # 1. 直奔对方基地，有机会就甩掉敌人。
-            if status == AGGRESSIVE_STATUS:
+            if status == Status.AGGRESSIVE:
                 if not oppBattler.canShoot: # 对方不能射击，对自己没有风险
-                    # 尝试移动
-                    #
-                    # TODO:
-                    #   还可以写得更加侵略性一些，比如为前方开路
+                    # 尝试继续行军
                     action = battler.get_next_attack_action()
-                    if Action.is_move(action):
-                        return self.try_make_decision(action,
-                                    self.try_make_decision(action + 4)) # 否则尝试开炮
-                    else: # 射击或停留
-                        return self.try_make_decision(action)
+                    if Action.is_move(action): # 下一步预计移动
+                        realAction = self.try_make_decision(action)
+                        if Action.is_move(realAction): # 继续起那就
+                            self.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                        # 否则就是等待了，打得更有侵略性一点，可以尝试向同方向开炮！
+                        realAction = self.try_make_decision(action + 4)
+                        if Action.is_shoot(realAction):
+                            self.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                    elif Action.is_shoot(action): # 下一步预计射击
+                        realAction = self.try_make_decision(action)
+                        if Action.is_shoot(realAction):
+                            self.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                    else: # 否则停留
+                        self.set_status(Status.KEEP_ON_OVERLAPPING)
+                        return Action.STAY
                 else:
                     # TODO: 根据历史记录分析，看看是否应该打破僵局
                     return Action.STAY # 原地等待
@@ -2327,23 +2984,22 @@ class Tank2Player(Player):
                     # TODO:
                     #   还可以根据历史行为分析是否是进攻性的
                     oppAction = oppBattler.get_next_attack_action()
-                    if Action.is_move(oppAction):
+                    if Action.is_move(oppAction): # 大概率是移动
                         # TODO:
                         #   回头堵路并不一定是最好的办法因为对于无脑 bot
                         #   没有办法射击就前进，如果我恰好后退，就相当于对方回退了一步
                         #   这种情况下应该考虑回头开炮！
-                        return self.try_make_decision(oppAction)
-                    else:
-                        return Action.STAY # 否则等待
-                else: # 对方可以攻击，等待会比较好
-                    return Action.STAY
-
+                        action = self.try_make_decision(oppAction) # 模仿敌人的移动方向！
+                        if Action.is_move(action):
+                            self.set_status(Status.READY_TO_BLOCK_ROAD) # 认为在堵路
+                # 否则等待
+                self.set_status(Status.READY_TO_BLOCK_ROAD)
+                return Action.STAY
 
             # 僵持模式
             #------------
             #elif status == STALEMATE_STATUS:
             #    raise NotImplementedError
-
 
             # TODO:
             #   more strategy ?
@@ -2352,22 +3008,180 @@ class Tank2Player(Player):
             #   - 敌方基地在眼前还可以特殊处理，比如没有炮弹默认闪避
 
 
+
+        # 先处理团队信号
+        # -------------
+        #
+
+
+        #
+        # 先观察敌方状态，确定应该进攻。
+        # 尽管对于大部分地图来讲，遵寻 BFS 的搜索路线，可以最快速地拆掉对方基地
+        # 但是对于一些地图来说，由于地形限制，我方拆家速度注定快不过对方，
+        # 这种时候就需要调整为防御策略
+        #
+        oppTank = battler.get_nearest_enemy() # 从路线距离分析确定最近敌人
+        oppBattler = BattleTank(oppTank)
+        status = assess_aggressive(battler, oppBattler)
+        self.set_status(status)
+
+        # 主动防御策略
+        #---------------------
+        # TODO:
+        #   主动堵路或预判射击，该如何权衡？
+        #-------------------------------------
+        # 1. 主动追击敌方目标，并会预判对方下回合行为进行射击
+        # 2. 主动堵路，和敌方目标重叠，这种情况对应于两者斜对角的情况
+        # 3. TODO:
+        #       尽可能少拆自己基地的外墙 ...
+        #
+        if status != Status.AGGRESSIVE: # 非侵略性，就触发主动防御，而不是 Denfensive 时才触发
+            #
+            #   前期如果过早决策为 Defensive 可能会错失战机，因为并不是每个人都会使用相同
+            #   的 BFS 算法，如果一开始就把对方界定为和己方的算法一致，那么可能会显得过于消极
+            #   因此可以考虑前几个回合忽略这个状态，而改用常规进攻，一定步数后，再决策是否为
+            #   Defensive
+            #
+            currentTurn = map_.turn # 这个值表示决策前为第几回合，初值为第 0 回合
+            if currentTurn < MINIMAL_TURNS_FOR_ACTIVE_DEFENSIVE_DECISION:
+                # 相当于 右边值 所代表的的回合数结束，下一回合开始开启主动防御
+                self.remove_status(Status.DEFENSIVE)
+                self.remove_status(Status.STALEMENT)
+                self.set_status(Status.AGGRESSIVE) # 前期以侵略性为主
+
+            else:
+                #
+                # 先处理特殊情况
+                # ---------------------
+                # 在敌人就要攻击我方基地的情况下，应该优先移动，而非预判击杀
+                # 这种防御性可能会带有自杀性质
+                #
+                # TODO:
+                # 1. 如果敌人当前回合炮弹冷却，下一炮就要射向基地，如果我方坦克下一步可以拦截
+                #    那么优先移动拦截，而非防御
+                # 2. 如果敌人当前回合马上可以开盘，那么仍然考虑拦截（自杀性）拦截，可以拖延时间
+                #    如果此时另一个队友还有两步就拆完了，那么我方就有机会胜利
+                #
+                if oppBattler.is_face_to_enemy_base(): # 面向基地
+                    if oppBattler.canShoot: # 敌方可以射击，我方如果一步内可以拦截，则自杀性防御
+                        for action in Action.MOVE_ACTIONS: # 尝试所有可能的移动情况
+                            if map_.is_valid_move_action(tank, action):
+                                map_.simulate_one_action(tank, action)
+                                if not oppBattler.is_face_to_enemy_base(): # 此时不再面向我方基地，为正确路线
+                                    map_.revert()
+                                    self.set_status(Status.SACRIFICE_FOR_OUR_BASE)
+                                    return action
+                                map_.revert()
+                    else: # 敌方不可射击
+                        for action in Action.MOVE_ACTIONS: # 敌方不能射击，我方尝试移动两步
+                            if map_.is_valid_move_action(tank, action):
+                                map_.simulate_one_action(tank, action)
+                                if not oppBattler.is_face_to_enemy_base(): # 一步防御成功
+                                    map_.revert()
+                                    self.set_status(Status.BLOCK_ROAD_FOR_OUR_BASE)
+                                    return action
+                                else: # 尝试第二步
+                                    if map_.is_valid_move_action(tank, action):
+                                        map_.simulate_one_action(tank, action)
+                                        if not oppBattler.is_face_to_enemy_base(): # 两步防御成功
+                                            map_.revert()
+                                            map_.revert() # 回滚两个回合
+                                            self.set_status(Status.SACRIFICE_FOR_OUR_BASE)
+                                            return action # 当前回合先移动一步，下回合则在此处按一步判定
+                                        map_.revert()
+                                map_.revert()
+                    # 没有救了 ... 那就预判射击把，万一敌方 tank 的策略有误，恰好被杀 ...
+
+                enemyAction = oppBattler.get_next_attack_action()
+                self.set_status(Status.HUNTING_ENEMY)
+                #
+                # TODO:
+                #   还可以堵路，怎么设计？
+                #   可以通过记忆来判断 5cca6810a51e681f0e8ab0c8 ?
+                #
+                #   主动预判，可能会弄巧成拙 5cca97a4a51e681f0e8ad227
+                #
+                #
+                # 预判是否可以射击
+                # --------------------
+                #   假设敌方采用与我相同的 BFS 算法，那么他下一回合的移动路线会是什么,
+                #   如果是移动行为，那么判断移动后是否可能恰好处在我方坦克的范围内，
+                #   在这种情况下，有可能将敌方坦克击杀
+                #
+                # TODO:
+                # 1. 可以根据历史行为拟合出路线，猜测下一回合敌方的移动位置？
+                # 2. 可以评估敌方的侵略性，如果能够从一些动作中学习到的话。那么这一步可以预测
+                #    击杀的概率，从而决定是击杀还是继续
+
+                #
+                # 应该优先堵路？因为对方显然不想和你对抗？
+                #
+
+                if Action.is_move(enemyAction):
+                    if battler.canShoot: # 如果我方能射击，判断是否能击杀，必须在地图模拟前先行判断
+                        map_.simulate_one_action(oppTank, enemyAction) # 提交地图模拟
+                        for _enemy in oppBattler.get_enemies_around():
+                            if _enemy is tank: # 发现敌方 tank 下一步决策后，会出现在我方 tank 前
+                                shootAction = battler.shoot_to(oppTank) # 保存这个动作
+                                map_.revert()
+                                self.set_status(Status.ANTICIPATE_TO_KILL_ENEMY)
+                                # 侵略行为，不需要检查安全性，否则大概率检查不通过 ...
+                                return shootAction
+                        map_.revert()
+                elif Action.is_shoot(enemyAction): # 射击行为，遇到墙了？
+                    pass
+
+                # 否则正常追击
+                huntingAction = battler.get_next_hunting_action(oppTank)
+                return self.try_make_decision(huntingAction)
+
+
+        # 如果是僵持，那么主动进攻？
+        elif status == Status.STALEMENT:
+            pass
+
+
+        #　侵略性的，那么主动进攻
+        else:
+            pass
+
+
+
+        #///////////#
+        #  常规进攻  #
+        #///////////#
+
         # 没有遭遇任何敌人
         #-----------------
         # 1. 进攻
         # 2. 如果存在安全风险，尝试采用射击代替移动
+        #
         attackAction = battler.get_next_attack_action()
-        action = self.try_make_decision(attackAction)
-        if Action.is_stay(action): # 存在风险
+        realAction = self.try_make_decision(attackAction)
+        if Action.is_stay(realAction): # 存在风险
             if Action.is_move(attackAction):
                 # 原本的移动，现在变为停留，则尝试射击
-                # TODO: 如果不在线路上，但是能够打掉东西，事实上也可以尝试射击？
                 fields = battler.get_destroyed_fields_if_shoot(attackAction)
                 route = battler.get_shortest_attacking_route()
                 for field in fields:
                     if is_block_in_route(field, route): # 为 block 对象，该回合可以射击
-                        return self.try_make_decision(battler.shoot_to(field), action)
-        return action
+                        action = self.try_make_decision(battler.shoot_to(field))
+                        if Action.is_shoot(action):
+                            self.set_status(Status.KEEP_ON_MARCHING)
+                            return action
+                # 再检查是否为基地外墙
+                for field in fields:
+                    if battler.check_is_outer_wall_of_enemy_base(field):
+                        action = self.try_make_decision(battler.shoot_to(field))
+                        if Action.is_shoot(action):
+                            self.set_status(Status.KEEP_ON_MARCHING)
+                            return action
+            # 否则停止不前
+            self.set_status(Status.WAIT_FOR_MARCHING)
+            return Action.STAY
+        # 否则继续攻击
+        self.set_status(Status.KEEP_ON_MARCHING)
+        return realAction
 
 #{ END 'player.py' }#
 
@@ -2386,8 +3200,9 @@ class Team(object):
 
 class Tank2Team(Team):
 
-
     def __init__(self, side, player1, player2):
+        player1.set_team(self)
+        player2.set_team(self)
         self._side = side
         self._player1 = player1
         self._player2 = player2
@@ -2414,9 +3229,16 @@ class Tank2Team(Team):
         Return:
             - actions    [int, int]    0, 1 号玩家的决策
         """
+        action1 = action2 = Action.INVALID
+        signal1 = signal2 = Signal.NONE
 
-        action1 = self._player1.make_decision()
-        action2 = self._player2.make_decision()
+        while True:
+
+            action1, signal1 = self._player1.make_decision()
+            action2, signal2 = self._player2.make_decision()
+
+            if signal1 == Signal.NONE and signal2 == Signal.NONE:
+                break
 
         # TODO:
         # ------------
@@ -2497,7 +3319,7 @@ class Botzone(object):
             sys.exit(0)
 
 
-class Tank2Botzone(Botzone, metaclass=Singleton):
+class Tank2Botzone(Botzone, metaclass=SingletonMeta):
 
     def __init__(self, map, long_running=False):
         super().__init__(long_running)
@@ -2539,6 +3361,13 @@ class Tank2Botzone(Botzone, metaclass=Singleton):
     def handle_input(self, stream=sys.stdin):
 
         super().handle_input(stream)
+        if self._data is not None:
+            self._data = DataSerializer.deserialize(self._data)
+        if self._globalData is not None:
+            try:
+                self._globalData = DataSerializer.deserialize(self._globalData)
+            except Exception as e:
+                self._globalData = None
 
         assert len(self._requests) - len(self._responses) == 1 # 带 header
 
@@ -2573,6 +3402,10 @@ class Tank2Botzone(Botzone, metaclass=Singleton):
 
     def make_output(self, actions, stream=sys.stdout,
                     debug=None, data=None, globaldata=None):
+        if data is not None:
+            data = DataSerializer.serialize(data)
+        if globaldata is not None:
+            globaldata = DataSerializer.serialize(globaldata)
         super().make_output(stream, actions, debug, data, globaldata)
 
     def get_past_actions(self, side, id):
@@ -2615,15 +3448,17 @@ def main(istream=None, ostream=None):
         bluePlayer1 = Tank2Player(tanks[BLUE_SIDE][1], map_, terminal.get_past_actions(BLUE_SIDE, 1))
         redPlayer0  = Tank2Player(tanks[RED_SIDE][0], map_, terminal.get_past_actions(RED_SIDE, 0))
         redPlayer1  = Tank2Player(tanks[RED_SIDE][1], map_, terminal.get_past_actions(RED_SIDE, 1))
+        bluePlayers = [bluePlayer0, bluePlayer1]
+        redPlayers  = [redPlayer0, redPlayer1]
 
         bluePlayer0.set_teammate(bluePlayer1)
         bluePlayer1.set_teammate(bluePlayer0)
         redPlayer0.set_teammate(redPlayer1)
         redPlayer1.set_teammate(redPlayer0)
-        bluePlayer0.set_opponents([redPlayer0, redPlayer1])
-        bluePlayer1.set_opponents([redPlayer0, redPlayer1])
-        redPlayer0.set_opponents([bluePlayer0, bluePlayer1])
-        redPlayer1.set_opponents([bluePlayer0, bluePlayer1])
+        bluePlayer0.set_opponents(redPlayers)
+        bluePlayer1.set_opponents(redPlayers)
+        redPlayer0.set_opponents(bluePlayers)
+        redPlayer1.set_opponents(bluePlayers)
 
         blueTeam = Tank2Team(BLUE_SIDE, bluePlayer0, bluePlayer1)
         redTeam  = Tank2Team(RED_SIDE, redPlayer0, redPlayer1)
@@ -2631,15 +3466,19 @@ def main(istream=None, ostream=None):
         redTeam.set_opponent_team(blueTeam)
 
         if side == BLUE_SIDE:
-            myPlayer0 = bluePlayer0
-            myPlayer1 = bluePlayer1
-            myTeam    = blueTeam
-            oppTeam   = redTeam
+            myPlayer0  = bluePlayer0
+            myPlayer1  = bluePlayer1
+            myPlayers  = bluePlayers
+            myTeam     = blueTeam
+            oppPlayers = redPlayers
+            oppTeam    = redTeam
         elif side == RED_SIDE:
-            myPlayer0 = redPlayer0
-            myPlayer1 = redPlayer1
-            myTeam    = redTeam
-            oppTeam   = blueTeam
+            myPlayer0  = redPlayer0
+            myPlayer1  = redPlayer1
+            myPlayers  = redPlayers
+            myTeam     = redTeam
+            oppPlayers = bluePlayers
+            oppTeam    = blueTeam
         else:
             raise Exception("unexpected side %s" % side)
 
@@ -2653,12 +3492,13 @@ def main(istream=None, ostream=None):
             simulator_print("Decisions for next turn:")
             simulator_print(_CUT_OFF_RULE)
             _SIDE_NAMES = ["Blue", "Red"]
-            for id_, action in enumerate(actions):
-                simulator_print("%s %02d: %s" % (_SIDE_NAMES[side], id_+1,
-                                    Action.get_name(action)) )
-            for id_, action in enumerate(oppActions):
-                simulator_print("%s %02d: %s" % (_SIDE_NAMES[1-side], id_+1,
-                                    Action.get_name(action)))
+            def _print_decision(actions, side, players):
+                for id_, action in enumerate(actions):
+                    simulator_print("%s %02d: %s \t[status] %s" % (
+                        _SIDE_NAMES[side], id_+1, Action.get_name(action),
+                        ", ".join( Status.get_name(status) for status in players[id_]._status ) ) )
+            _print_decision(actions, side, myPlayers)
+            _print_decision(oppActions, 1-side, oppPlayers)
             simulator_print(_CUT_OFF_RULE)
             simulator_print("Actually actions on this turn:")
             simulator_print(_CUT_OFF_RULE)
@@ -2675,7 +3515,14 @@ def main(istream=None, ostream=None):
             "cost": round(t2-t1, 4),
             }
 
-        terminal.make_output(actions, stream=ostream, debug=debugInfo)
+        data = {
+            "status": [
+                [ bluePlayer0.get_status(), bluePlayer1.get_status(), ],
+                [ redPlayer0.get_status(),  redPlayer1.get_status(),  ],
+            ]
+        }
+
+        terminal.make_output(actions, stream=ostream, debug=debugInfo, data=data)
 
 
 if __name__ == '__main__':

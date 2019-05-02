@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:33:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 04:16:56
+# @Last Modified time: 2019-05-02 14:25:57
 """
 Botzone 终端类
 
@@ -17,7 +17,7 @@ __all__ = [
 
 from .const import SIDE_COUNT, TANKS_PER_SIDE
 from .global_ import json, sys
-from .utils import Singleton
+from .utils import SingletonMeta, DataSerializer
 from .field import BrickField, SteelField, WaterField
 
 #{ BEGIN }#
@@ -68,7 +68,7 @@ class Botzone(object):
             sys.exit(0)
 
 
-class Tank2Botzone(Botzone, metaclass=Singleton):
+class Tank2Botzone(Botzone, metaclass=SingletonMeta):
 
     def __init__(self, map, long_running=False):
         super().__init__(long_running)
@@ -110,6 +110,13 @@ class Tank2Botzone(Botzone, metaclass=Singleton):
     def handle_input(self, stream=sys.stdin):
 
         super().handle_input(stream)
+        if self._data is not None:
+            self._data = DataSerializer.deserialize(self._data)
+        if self._globalData is not None:
+            try:
+                self._globalData = DataSerializer.deserialize(self._globalData)
+            except Exception as e:
+                self._globalData = None
 
         assert len(self._requests) - len(self._responses) == 1 # 带 header
 
@@ -144,6 +151,10 @@ class Tank2Botzone(Botzone, metaclass=Singleton):
 
     def make_output(self, actions, stream=sys.stdout,
                     debug=None, data=None, globaldata=None):
+        if data is not None:
+            data = DataSerializer.serialize(data)
+        if globaldata is not None:
+            globaldata = DataSerializer.serialize(globaldata)
         super().make_output(stream, actions, debug, data, globaldata)
 
     def get_past_actions(self, side, id):

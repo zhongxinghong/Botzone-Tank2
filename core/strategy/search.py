@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 22:30:38
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-02 16:19:26
 """
 BFS 搜索最短路径的工具库
+
+
+WARNING:
+
+1. 一定要使用 get_route_length 来求得路线长度，而不是 len(route)
+2. 一定要记得 get_route_length 会在路线找不到的情况下，返回 INFINITY_ROUTE_LENGTH
+   要对这个特殊值进行判断！
 
 """
 
@@ -13,6 +20,11 @@ __all__ = [
     "find_shortest_route_for_move",
     "find_shortest_route_for_shoot",
     "get_route_length",
+
+    "get_searching_directions",
+
+    "DIRECTIONS_URDL", "DIRECTIONS_ULDR", "DIRECTIONS_DRUL", "DIRECTIONS_DLUR",
+    "DIRECTIONS_RULD", "DIRECTIONS_LURD", "DIRECTIONS_RDLU", "DIRECTIONS_LDRU",
 
     "DEFAULT_BLOCK_TYPES",
     "DEFAULT_DESTROYABLE_TYPES"
@@ -26,12 +38,24 @@ __all__ = [
 
     ]
 
-from ..const import DIRECTIONS_URDL, DEBUG_MODE
+from ..const import DEBUG_MODE, MAP_WIDTH, MAP_HEIGHT
 from ..global_ import np, deque
 from ..utils import debug_print, debug_pprint
 from ..field import Field, BASE_FIELD_TYPES, TANK_FIELD_TYPES
 
 #{ BEGIN }#
+
+# y-axis first / vertical first / aggressive
+DIRECTIONS_URDL = ( (0, -1), ( 1, 0), (0,  1), (-1, 0) ) # 上右下左
+DIRECTIONS_ULDR = ( (0, -1), (-1, 0), (0,  1), ( 1, 0) ) # 上左下右
+DIRECTIONS_DRUL = ( (0,  1), ( 1, 0), (0, -1), (-1, 0) ) # 下右上左
+DIRECTIONS_DLUR = ( (0,  1), (-1, 0), (0, -1), ( 1, 0) ) # 下左上右
+
+# x-axis first / horizontal first / defensive
+DIRECTIONS_RULD = ( ( 1, 0), (0, -1), (-1, 0), (0,  1) ) # 右上左下
+DIRECTIONS_LURD = ( (-1, 0), (0, -1), ( 1, 0), (0,  1) ) # 左上右下
+DIRECTIONS_RDLU = ( ( 1, 0), (0,  1), (-1, 0), (0, -1) ) # 右下左上
+DIRECTIONS_LDRU = ( (-1, 0), (0,  1), ( 1, 0), (0, -1) ) #　左下右上
 
 DEFAULT_BLOCK_TYPES       = ( Field.STEEL, Field.WATER, )
 DEFAULT_DESTROYABLE_TYPES = ( Field.BRICK, )
@@ -51,8 +75,48 @@ MOVE_ACTION_ON_BFS  = 0  # 上一回合操作标记为搜索
 SHOOT_ACTION_ON_BFS = 1  # 上一回合操作标记为射击
 
 
+def get_searching_directions(x1, y1, x2=None, y2=None, x_axis_first=False):
+    """
+    获得从 (x1, y1) -> (x2, y2) 最优的搜索方向顺序
+
+    Input:
+        - (x1, y1)   起点坐标
+        - (x2, y2)   终点坐标，可以没有，那么将通过 (x1, y1) 在地图中的相对位置，
+                     对应着左上、左下、右上、右下四个区域，确定最佳的搜索顺序
+
+        - x_axis_first   bool   是否采用 x 轴方向优先的搜索方式？默认以垂直方向优先，
+                                也就是如果存在到达目标坐标的两条长度相同的路径，
+                                会优先从 y 轴方向移动过去，即先上下移动，后左右移动。
+                                若选择以水平方向优先，则先左右移动，后上下移动。
+
+                                优先上下移动通常用于侵略，优先左右移动通常用于防御
+
+    """
+    if x2 is None or y2 is None:
+        x3 = MAP_WIDTH  // 2 # 中点 x
+        y3 = MAP_HEIGHT // 2 # 中点 y
+        if   ( x3 - x1 >= 0 ) and ( y3 - y1 >= 0 ):
+            return DIRECTIONS_DRUL if not x_axis_first else DIRECTIONS_RDLU
+        elif ( x3 - x1 >= 0 ) and ( y3 - y1 <= 0 ):
+            return DIRECTIONS_URDL if not x_axis_first else DIRECTIONS_RULD
+        elif ( x3 - x1 <= 0 ) and ( y3 - y1 >= 0 ):
+            return DIRECTIONS_DLUR if not x_axis_first else DIRECTIONS_LDRU
+        elif ( x3 - x1 <= 0 ) and ( y3 - y1 <= 0 ):
+            return DIRECTIONS_ULDR if not x_axis_first else DIRECTIONS_LURD
+    else:
+        if   ( x2 - x1 >= 0 ) and ( y2 - y1 >= 0 ):
+            return DIRECTIONS_DRUL if not x_axis_first else DIRECTIONS_RDLU
+        elif ( x2 - x1 >= 0 ) and ( y2 - y1 <= 0 ):
+            return DIRECTIONS_URDL if not x_axis_first else DIRECTIONS_RULD
+        elif ( x2 - x1 <= 0 ) and ( y2 - y1 >= 0 ):
+            return DIRECTIONS_DLUR if not x_axis_first else DIRECTIONS_LDRU
+        elif ( x2 - x1 <= 0 ) and ( y2 - y1 <= 0 ):
+            return DIRECTIONS_ULDR if not x_axis_first else DIRECTIONS_LURD
+    raise Exception
+
+
 def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
-                         block_types=DEFAULT_BLOCK_TYPES):
+                         block_types=DEFAULT_BLOCK_TYPES, x_axis_first=False):
     """
     BFS 搜索从 start -> end 的最短路径，带权重
     ----------------------------------------------------------------------------
@@ -71,6 +135,8 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
         - block_types       [int]       不能够移动到的 field 类型
                                         WARNING:
                                             需要自行指定不能够到达的基地、坦克的类型
+
+        - x_axis_first      bool        是否优先搜索 x 轴方向
 
     Return:
 
@@ -158,7 +224,7 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
             dummyTail[1] = node
             break
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, x2, y1, y2, x_axis_first=x_axis_first):
             x, y = node[0]
             x3 = x + dx
             y3 = y + dy
@@ -184,7 +250,8 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
 
 def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                           shoot_weight_matrix_T, block_types=DEFAULT_BLOCK_TYPES,
-                          destroyable_types=DEFAULT_DESTROYABLE_TYPES):
+                          destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                          x_axis_first=False):
     """
     BFS 搜索从 start 开始到击中 end 的最短路线，带权重
     ----------------------------------------------------------------------------
@@ -222,6 +289,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                                         搜索时，遇到这样的 field 会跳过
                                         WARNING:
                                             需要自行制定可以被摧毁的基地、坦克的类型
+
+        - x_axis_first          bool    是否优先搜索 x 轴方向
 
     Return:
 
@@ -266,7 +335,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
     # 哪些位置可以对目标发动射击，即 end 向四个方向伸展开的区域
     matrixCanShoot = np.zeros_like(matrixMap, dtype=np.bool8)
     matrixCanShoot[x2, y2] = True
-    for dx, dy in DIRECTIONS_URDL:
+    for dx, dy in get_searching_directions(x1, y1, x2, y2, x_axis_first=x_axis_first):
         x, y = end
         while True:
             x += dx
@@ -337,7 +406,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
         if DEBUG_MODE:
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
 
-        for dx, dy in DIRECTIONS_URDL:
+        for dx, dy in get_searching_directions(x1, y1, x2, y2, x_axis_first=x_axis_first):
             x, y = node[0]
             x3 = x + dx
             y3 = y + dy
@@ -403,8 +472,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
     return dummyTail
 
 
-def find_shortest_route_for_move(start, end, matrix_T,
-                                 block_types=DEFAULT_BLOCK_TYPES):
+def find_shortest_route_for_move(start, end, matrix_T, block_types=DEFAULT_BLOCK_TYPES,
+                                 x_axis_first=False):
     """
     搜索移动到目标的最短路线
 
@@ -422,7 +491,7 @@ def find_shortest_route_for_move(start, end, matrix_T,
     matrixWeight[matrixMap == Field.WATER] = INFINITY_WEIGHT
 
     dummyTail = _BFS_search_for_move(start, end, matrixMap, matrixWeight,
-                                    block_types=block_types)
+                                    block_types=block_types, x_axis_first=x_axis_first)
 
     route = []
     node = dummyTail
@@ -441,7 +510,8 @@ def find_shortest_route_for_move(start, end, matrix_T,
 
 def find_shortest_route_for_shoot(start, end, matrix_T,
                                   block_types=DEFAULT_BLOCK_TYPES,
-                                  destroyable_types=DEFAULT_DESTROYABLE_TYPES):
+                                  destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                                  x_axis_first=False):
     """
     搜索移动并射击掉目标的最短路线
 
@@ -467,7 +537,8 @@ def find_shortest_route_for_shoot(start, end, matrix_T,
 
     dummyTail = _BFS_search_for_shoot(start, end, matrixMap, matrixMoveWeight,
                                     matrixShootWeight, block_types=block_types,
-                                    destroyable_types=destroyable_types)
+                                    destroyable_types=destroyable_types,
+                                    x_axis_first=x_axis_first)
     route = []
     node = dummyTail
     while True:

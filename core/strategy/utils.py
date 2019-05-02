@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 00:08:12
+# @Last Modified time: 2019-05-02 10:59:16
 """
 决策时的通用函数库
 
@@ -18,12 +18,12 @@ __all__ = [
 
     ]
 
-from ..const import DIRECTIONS_URDL, DEBUG_MODE
+from ..const import DEBUG_MODE
 from ..global_ import np, deque
 from ..utils import debug_print, debug_pprint
 from ..action import Action
 from ..field import Field, EmptyField, SteelField, WaterField
-from .bfs import MOVE_ACTION_ON_BFS, SHOOT_ACTION_ON_BFS
+from .search import MOVE_ACTION_ON_BFS, SHOOT_ACTION_ON_BFS
 
 #{ BEGIN }#
 
@@ -69,7 +69,6 @@ def get_destroyed_fields(tank, action, map):
 
     return [] # 没有任何对象被摧毁
 '''
-
 
 def is_block_in_route(field, route):
     """

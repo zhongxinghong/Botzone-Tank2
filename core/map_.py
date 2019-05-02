@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 16:33:38
+# @Last Modified time: 2019-05-02 01:51:42
 """
 地图类
 """
@@ -16,7 +16,7 @@ __all__ = [
 from .const import DEBUG_MODE, COMPACT_MAP, SIDE_COUNT, TANKS_PER_SIDE, GAME_STATUS_NOT_OVER,\
                 GAME_STATUS_DRAW, GAME_STATUS_BLUE_WIN, GAME_STATUS_RED_WIN
 from .global_ import np, functools
-from .utils import CachedProperty, Singleton, debug_print, simulator_print
+from .utils import CachedProperty, SingletonMeta, debug_print, simulator_print
 from .action import Action
 from .field import Field, EmptyField, BaseField, BrickField, SteelField, WaterField, TankField
 
@@ -62,7 +62,7 @@ class Map(object):
         return self[x, y]
 
 
-class Tank2Map(Map, metaclass=Singleton):
+class Tank2Map(Map, metaclass=SingletonMeta):
 
     def __init__(self, width, height):
         super().__init__(width, height)
@@ -241,7 +241,6 @@ class Tank2Map(Map, metaclass=Singleton):
         else: # 未知的行为
             raise Exception("unexpected action %s" % action)
 
-
     def perform(self, blue_actions, red_actions):
         """
         执行一回合的行为
@@ -342,6 +341,10 @@ class Tank2Map(Map, metaclass=Singleton):
     def simulate_one_action(self, tank, action):
         """
         只执行其中一架 tank 的行为，其他 tank 均假设为不动
+
+        Input:
+            - tank     TankField/BattleTank   能表明坐标的 tank 对象
+            - action   int                    下回合的行动
         """
         actions = [
             [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)

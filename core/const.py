@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 21:18:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 16:23:18
+# @Last Modified time: 2019-05-02 03:23:01
 """
 全局常数
 """
@@ -36,9 +36,6 @@ GAME_STATUS_RED_WIN  = 1
 
 BLUE_SIDE = 0
 RED_SIDE  = 1
-
-DIRECTIONS_URDL = ( (0,-1), (1,0), (0,1), (-1,0) ) # 上右下左，与行为一致
-
 
 #{ END }#
 

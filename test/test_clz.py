@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 05:08:11
+# @Last Modified time: 2019-05-01 20:37:33
 
 class Tank(object):
 
@@ -26,6 +26,47 @@ class Tank(object):
         return "Tank: %s, inner: %s" % (self._tank, self.__inner)
 
 
+class UniqueIntEnumMeta(type):
+
+    def __new__(cls, name, bases, attrs):
+        offset = attrs.get("__offset__", 0)
+        for k, v in attrs.items():
+            if isinstance(v, int):
+                attrs[k] += offset
+        return super(UniqueIntEnumMeta, cls).__new__(cls, name, bases, attrs)
+
+
+class Signal(object, metaclass=UniqueIntEnumMeta):
+
+    __offset__ = 100
+
+    A = 0
+    B = 1
+
+    C = ( A, B )
+
+    @property
+    @staticmethod
+    def C():
+        return (A, B)
+
+    def _test_method(self):
+        pass
+
+    @staticmethod
+    def _test_static_method():
+        pass
+
+    @classmethod
+    def _test_class_method():
+        pass
+
+    @property
+    def _test_property(self):
+        return -1
+
+
+'''
 for _ in range(3):
     a = Tank("Blue 1")
     b = Tank("Red 1")
@@ -38,3 +79,8 @@ print(b)
 print(c)
 print(d)
 
+'''
+
+print(Signal.A)
+print(Signal.B)
+print(Signal.C) # 未变 ！

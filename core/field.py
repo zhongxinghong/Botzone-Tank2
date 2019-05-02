@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:17:45
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 15:47:55
+# @Last Modified time: 2019-05-01 18:33:33
 """
 地图区域类
 """
@@ -23,6 +23,7 @@ __all__ = [
 
     ]
 
+from .utils import UniqueIntEnumMeta
 from .action import Action
 
 #{ BEGIN }#

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 15:29:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-27 17:58:16
+# @Last Modified time: 2019-05-02 14:17:57
 """
 全局导入需要的库
 
@@ -27,6 +27,9 @@ import time
 import sys
 import json
 import random
+import pickle
+import base64
+import gzip
 import numpy as np
 from collections import deque
 from pprint import pprint

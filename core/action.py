@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 17:12:04
+# @Last Modified time: 2019-05-01 20:41:08
 """
 行为类
 """
@@ -18,6 +18,9 @@ from .global_ import np
 #{ BEGIN }#
 
 class Action(object):
+
+    # 推迟决策
+    POSTPONE    = -4 # 用于告知 Team 让队友优先决策
 
     # 空与无效
     DUMMY       = -3 # 额外添加的
@@ -43,6 +46,12 @@ class Action(object):
     DIRECTION_OF_ACTION_Y  = ( -1, 0, 1,  0 )
     DIRECTION_OF_ACTION_XY = ( (0,-1), (1,0), (0,1), (-1,0) )
 
+    # 方便用于迭代
+    MOVE_ACTIONS  = ( MOVE_UP,  MOVE_RIGHT,  MOVE_DOWN,  MOVE_LEFT  )
+    SHOOT_ACTIONS = ( SHOOT_UP, SHOOT_RIGHT, SHOOT_DOWN, SHOOT_LEFT )
+    VALID_ACTIONS = ( STAY, ) + MOVE_ACTIONS + SHOOT_ACTIONS
+
+
     _ACTION_NAMES = [
         "Invalid",  "Stay",
         "Up Move",  "Right Move",  "Down Move",  "Left Move",
@@ -51,7 +60,7 @@ class Action(object):
 
     @staticmethod
     def is_valid(action): # 是否为有效行为
-        return -2 < action <= 7
+        return -1 <= action <= 7
 
     @staticmethod
     def is_stay(action): # 是否为停止行为

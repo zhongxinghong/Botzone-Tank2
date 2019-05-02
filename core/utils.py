@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-30 16:24:12
+# @Last Modified time: 2019-05-02 14:18:50
 """
 工具类
 """
@@ -16,12 +16,15 @@ __all__ = [
     "simulator_pprint",
 
     "CachedProperty",
-    "Singleton",
+    "SingletonMeta",
+    "UniqueIntEnumMeta",
+
+    "DataSerializer",
 
     ]
 
 from .const import DEBUG_MODE, SIMULATOR_ENV, SIMULATOR_PRINT
-from .global_ import pprint
+from .global_ import pprint, pickle, base64, gzip
 
 #{ BEGIN }#
 
@@ -87,7 +90,7 @@ class CachedProperty(property):
         obj.__dict__.pop(key, None)
 
 
-class Singleton(type):
+class SingletonMeta(type):
     """
     Singleton Metaclass
     @link https://github.com/jhao104/proxy_pool/blob/428359c8dada998481f038dbdc8d3923e5850c0e/Util/utilClass.py
@@ -96,7 +99,48 @@ class Singleton(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instance:
-            cls._instance[cls] = super(Singleton, cls).__call__(*args)
+            cls._instance[cls] = super(SingletonMeta, cls).__call__(*args)
         return cls._instance[cls]
+
+
+class UniqueIntEnumMeta(type):
+    """
+    使得枚举类内所有的 int 值都增加一个 __offset__ 偏移量
+    使得不同的枚举类可以用同样的 int 值申明 case，但是不同枚举类间，实际的属性值不同不同
+
+    需要在类属性中通过 __offset__ 值申明偏移量
+
+    """
+    def __new__(cls, name, bases, attrs):
+        offset = attrs.get("__offset__", 0) # 默认为 0
+        for k, v in attrs.items():
+            if isinstance(v, int):
+                attrs[k] += offset
+        return super(UniqueIntEnumMeta, cls).__new__(cls, name, bases, attrs)
+
+
+class DataSerializer(object):
+
+    @staticmethod
+    def _unpad(s):
+        return s.rstrip("=")
+
+    @staticmethod
+    def _pad(s):
+        return s + "=" * ( 4 - len(s) % 4 )
+
+    @staticmethod
+    def serialize(obj):
+        return __class__._unpad(
+                    base64.b64encode(
+                        gzip.compress(
+                            pickle.dumps(obj))).decode("utf-8"))
+
+    @staticmethod
+    def deserialize(s):
+        return pickle.loads(
+                    gzip.decompress(
+                        base64.b64decode(
+                            __class__._pad(s).encode("utf-8"))))
 
 #{ END }#

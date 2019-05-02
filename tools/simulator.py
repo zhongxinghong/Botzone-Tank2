@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 11:25:35
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 02:48:24
+# @Last Modified time: 2019-05-02 09:56:56
 """
 无 GUI 的游戏模拟器，可以模拟播放比赛记录
 
@@ -43,20 +43,21 @@ SIDE         = config["game"]["side"]
 INITIAL_TURN = config["game"]["initial_turn"]
 
 ## 模拟器配置 ##
-TURN_INTERVAL   = config["simulator"]["turn_interval"]
-PAUSE_PER_TURN  = config["simulator"]["pause"]
+TURN_INTERVAL  = config["simulator"]["turn_interval"]
+PAUSE_PER_TURN = config["simulator"]["pause"]
+DATA_SOURCE    = config["simulator"]["data_source"]
 
 
 def main():
 
     from main import main as run_game
 
-    if SIDE == 0:
+    if DATA_SOURCE == 0:
         INPUT_JSON = os.path.join(DATASET_DIR, MATCH_ID, BLUE_INPUT_JSON_FILENAME)
-    elif SIDE == 1:
+    elif DATA_SOURCE == 1:
         INPUT_JSON = os.path.join(DATASET_DIR, MATCH_ID, RED_INPUT_JSON_FILENAME)
     else:
-        raise Exception("unknown side %s" % SIDE)
+        raise Exception("unknown side %s" % DATA_SOURCE)
 
     wholeInputJSON = json_load(INPUT_JSON)
 
