@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 22:14:37
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-03 03:57:35
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-03 16:53:07
 """
 消息与信号
 
@@ -29,13 +29,17 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
     CANHANDLED  = 2   # 未能处理团队信号，通常是因为尝试处理但是发现不合适
 
 
-    PREPARE_FOR_BREAK_BRICK = 11 # 准备破墙，也就是准备给自己寻找后路
-    READY_TO_PREPARE_FOR_BREAK_BRICK = 12 # 准备好为破墙而凿开两边墙壁
-    READY_TO_BREAK_BRICK = 13  # 准备要破墙
+    PREPARE_FOR_BREAK_BRICK          = 11  # 团队信号，准备破墙，先给自己寻找后路
+    READY_TO_PREPARE_FOR_BREAK_BRICK = 12  # 队员信号，准备好为破墙而凿开两边墙壁
 
+    FORCED_TO_BREAK_BRICK            = 13  #　团队信号，强制破墙
+    READY_TO_BREAK_BRICK             = 14  # 队员信号，准备要破墙
 
-    PREPARE_FOR_BREAK_OVERLAP = 14  # 团队向队员发信号，希望能马上打破重叠
-    READY_TO_BREAK_OVERLAP    = 15  # 准备要主动打破重叠
+    SUGGEST_TO_BREAK_OVERLAP         = 15  # 团队信号，建议马上打破重叠
+    READY_TO_BREAK_OVERLAP           = 16  # 队员信号，准备要主动打破重叠
+
+    FORCED_MARCH                     = 17  # 团队信号，强制行军
+    READY_TO_FORCED_MARCH            = 18  # 队员信号，准备强制行军
 
 
     BREAK_SIGNALS = ( UNHANDLED, CANHANDLED )

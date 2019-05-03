@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-01 18:00:49
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-03 05:13:54
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-03 22:38:09
 """
 当前状态
 
@@ -32,7 +32,7 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     DYING      = 4  # 准备要挂了
     DIED       = 5  # 已经挂了
 
-    REALODING  = 9  # 正在装弹，下回合无法射击
+    RELOADING  = 9  # 正在装弹，下回合无法射击
 
     ENCOUNT_ENEMY      = 11
     ENCOUNT_ONE_ENEMY  = 12
@@ -54,6 +54,7 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     READY_TO_PREPARE_FOR_BREAK_BRICK = 41 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK   = 42 # 准备破墙
     READY_TO_BREAK_OVERLAP = 43 # 准备主动打破重叠
+    READY_TO_FORCED_MARCH  = 44 # 准备主动强攻
 
     ANTICIPATE_TO_KILL_ENEMY = 50 # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
     BLOCK_ROAD_FOR_OUR_BASE  = 51 # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间

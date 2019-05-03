@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 11:25:35
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-02 22:46:36
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-04 03:09:51
 """
 无 GUI 的游戏模拟器，可以模拟播放比赛记录
 
@@ -21,8 +21,7 @@ from _lib.utils import json_load
 from _lib.simulator.const import BLUE_INPUT_JSON_FILENAME, RED_INPUT_JSON_FILENAME,\
                                 DATASET_DIR, CONFIG_JSON_FILE
 from _lib.simulator.utils import cut_by_turn
-from _lib.simulator.stream import SimulatorJSONFileInputStream, SimulatorConsoleOutputStream,\
-                                SimulatorTextInputStream
+from _lib.simulator.stream import SimulatorConsoleOutputStream, SimulatorTextInputStream
 
 try:
     config = json_load(CONFIG_JSON_FILE)

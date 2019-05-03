@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 10:59:16
+# @Last Modified time: 2019-05-04 01:08:30
 """
 决策时的通用函数库
 
@@ -15,6 +15,7 @@ __all__ = [
     "is_block_in_route",
 
     "fake_map_matrix_T_without_enemy",
+    "fake_map_matrix_T_thinking_of_enemy_as_steel",
 
     ]
 
@@ -26,49 +27,6 @@ from ..field import Field, EmptyField, SteelField, WaterField
 from .search import MOVE_ACTION_ON_BFS, SHOOT_ACTION_ON_BFS
 
 #{ BEGIN }#
-
-''' # Migrate to BattleTank.get_destroyed_fields_if_shoot
-def get_destroyed_fields(tank, action, map):
-    """
-    下一回合某坦克执行一个射击行为后，将会摧毁的 fields
-
-    用于单向分析 action 所能造成的影响，不考虑对方下一回合的决策
-
-    - 不判断自身是否与其他 tank 重叠
-    - 如果对方是 tank 认为对方下回合不开炮
-
-    Return:
-        - fields   [Field]/[]   被摧毁的 fields
-                                如果没有对象被摧毁，则返回空列表
-    """
-    map_ = map
-    assert map_.is_valid_shoot_action(tank, action)
-
-    action -= 4 # 使之与 dx, dy 的 idx 对应
-    x, y = tank.xy
-    dx, dy = Action.DIRECTION_OF_ACTION_XY[action]
-
-    while True: # 查找该行/列上是否有可以被摧毁的对象
-        x += dx
-        y += dy
-        if not map_.in_map(x, y):
-            break
-        currentFields = map_[x, y]
-        if len(currentFields) == 0: # 没有对象
-            continue
-        elif len(currentFields) > 1: # 均为坦克
-            return currentFields
-        else: # len == 1
-            field = currentFields[0]
-            if isinstance(field, (WaterField, EmptyField) ): # 空对象或水路
-                continue
-            elif isinstance(field, SteelField): # 钢墙不可摧毁
-                return []
-            else:
-                return currentFields
-
-    return [] # 没有任何对象被摧毁
-'''
 
 def is_block_in_route(field, route):
     """
@@ -103,5 +61,20 @@ def fake_map_matrix_T_without_enemy(map, mySide):
         if cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide:
             cMatrixMap[oppTank.xy] = Field.EMPTY
     return cMatrixMap
+
+
+def fake_map_matrix_T_thinking_of_enemy_as_steel(map, mySide):
+    """
+    伪造一个敌方坦克视为钢墙的地图类型矩阵
+    用于在堵路时估计对方时候存在绕路的可能
+    """
+    map_ = map
+    oppSide = 1 - mySide
+    cMatrixMap = map_.matrix_T.copy()
+    for oppTank in map_.tanks[oppSide]:
+        if cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide:
+            cMatrixMap[oppTank.xy] = Field.STEEL
+    return cMatrixMap
+
 
 #{ END }#

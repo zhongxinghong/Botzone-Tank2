@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 10:59:07
+# @Last Modified time: 2019-05-04 02:32:21
 """
 状况评估
 """
@@ -47,9 +47,10 @@ def assess_aggressive(battler, oppBattler):
     #   阈值不可定的太小，否则可能是错误估计，因为对方如果有防守，
     #   就有可能拖延步数。很有可能需要再动态决策一下，尝试往前预测几步，看看
     #   会不会受到阻碍，然后再下一个定论
+    #
     if oppRouteLen - myRouteLen >= 1: # TODO: 阈值多少合理？
         return Status.AGGRESSIVE
-    elif myRouteLen - oppRouteLen > 1: # TODO: 阈值？
+    elif myRouteLen - oppRouteLen > 2: # TODO: 尽量不要触发防御模式 ...
         return Status.DEFENSIVE
     else:
         return Status.STALEMENT

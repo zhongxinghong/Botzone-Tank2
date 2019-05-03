@@ -43,6 +43,10 @@
     },
     {
         "package": "strategy",
+        "file": "../core/strategy/label.py"
+    },
+    {
+        "package": "strategy",
         "file": "../core/strategy/utils.py"
     },
     {

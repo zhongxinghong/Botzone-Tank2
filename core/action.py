@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-03 01:57:34
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-03 20:49:01
 """
 行为类
 """
@@ -14,6 +14,7 @@ __all__ = [
     ]
 
 from .global_ import np
+from .utils import debug_print
 
 #{ BEGIN }#
 

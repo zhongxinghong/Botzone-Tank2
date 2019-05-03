@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-03 03:31:44
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-04 01:09:31
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -18,7 +18,7 @@ from .global_ import np
 from .utils import CachedProperty, debug_print
 from .action import Action
 from .field import Field, SteelField, TankField, EmptyField, WaterField, BaseField, BrickField
-from .strategy.utils import fake_map_matrix_T_without_enemy
+from .strategy.utils import fake_map_matrix_T_without_enemy, fake_map_matrix_T_thinking_of_enemy_as_steel
 from .strategy.search import find_shortest_route_for_shoot, find_shortest_route_for_move,\
         get_route_length, get_searching_directions, DEFAULT_BLOCK_TYPES, DEFAULT_DESTROYABLE_TYPES,\
         INFINITY_ROUTE_LENGTH
@@ -30,7 +30,7 @@ class BattleTank(object):
 
     _instances = {} # { (side, id): instance }
 
-    def __new__(cls, tank, map=None, *args, **kwargs):
+    def __new__(cls, tank, map=None, **kwargs):
         """
         以 (side, id) 为主键，缓存已经创建过的作战对象
         使得该对象对于特定的 tank 对象为 Singleton
@@ -41,20 +41,21 @@ class BattleTank(object):
             map_ = map
             if map_ is None:
                 raise ValueError("map is required at first initialization")
-            obj = super(BattleTank, cls).__new__(cls, *args, **kwargs)
+            obj = object.__new__(cls, **kwargs)
             __class__._instances[key] = obj
-            ## BattleTank.__init__(obj, tank, map) # 在此处初始化
-            obj._tank = tank
-            obj._map = map_
-            obj.__attackingRoute = None
-            ## END BattleTank.__init__
+            obj._initialize(tank, map_) # 用自定义的函数初始化，而不是 __init__ ，为了防止单例被反复调用
         return obj
 
     def __init__(self, tank, map=None):
-        '''self._tank = tank
-        self._map = map
-        self.__attackingRoute = None # 缓存变量'''
         pass
+
+    def _initialize(self, tank, map):
+        self._tank = tank
+        self._map = map
+        #self.__attackingRoute = None # 缓存变量 -> 为了支持地图回滚，将路线缓存暂时去掉了
+
+    def __eq__(self, other):
+        return self.side == other.side and self.id == other.id
 
     def __repr__(self):
         return "%s(%d, %d, %d, %d)" % (
@@ -94,7 +95,7 @@ class BattleTank(object):
         return not Action.is_shoot(self._tank.previousAction)
 
 
-    def get_shortest_attacking_route(self, ignore_enemies=True):
+    def get_shortest_attacking_route(self, ignore_enemies=True, bypass_enemies=False):
         """
         获得最短进攻路线
 
@@ -102,9 +103,17 @@ class BattleTank(object):
 
             - ignore_enemies    bool    是否将敌人视为空
 
+            - bypass_enemies    bool    是否将敌人视为 SteelField 然后尝试绕过他0
+
+            注意： 这两个是互斥的，至多设置一个为 True
+
         """
-        if self.__attackingRoute is not None: # 缓存
-            return self.__attackingRoute
+
+        #if self.__attackingRoute is not None: # 缓存
+        #    return self.__attackingRoute
+
+        if ignore_enemies and bypass_enemies:
+            raise ValueError("you can't think of enemies as steel and air at the same time")
 
         map_    = self._map
         tank    = self._tank
@@ -114,6 +123,8 @@ class BattleTank(object):
 
         if ignore_enemies:
             matrix_T = fake_map_matrix_T_without_enemy(map_, tank.side)
+        elif bypass_enemies:
+            matrix_T = fake_map_matrix_T_thinking_of_enemy_as_steel(map_, tank.side)
         else:
             matrix_T = map_.matrix_T
 
@@ -131,7 +142,6 @@ class BattleTank(object):
                             # 不将敌方坦克加入到其中
                         ))
 
-        self.__attackingRoute = route
         return route
 
 

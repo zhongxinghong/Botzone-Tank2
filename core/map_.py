@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-02 16:52:51
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-04 03:53:17
 """
 地图类
 """
@@ -76,6 +76,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
             #   field: Field,
             # )
         self._previousActions = [] # Stack([ [[int, int], [int, int]] ]) 所有坦克的历史动作记录，用于回滚
+        self._performedActionsRecord = {} # turn -> [[int, int], [int, int]] 记录 perform 所执行过的动作，用于 undo_revert
         self._init_bases()
         self._init_tanks()
 
@@ -86,8 +87,9 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         self.__init__(width, height)
 
     def __clean_cache(self): # 清除缓存属性
-        CachedProperty.clean(self, "matrix")
-        CachedProperty.clean(self, "matrix_T")
+        #CachedProperty.clean(self, "matrix")
+        #CachedProperty.clean(self, "matrix_T")
+        pass # 不再使用缓存啦
 
     @property
     def turn(self): # 当前回合数
@@ -101,7 +103,8 @@ class Tank2Map(Map, metaclass=SingletonMeta):
     def bases(self):
         return self._bases
 
-    @CachedProperty
+    #@CachedProperty # 缓存效果不明显
+    @property
     def matrix(self):
         """
         缓存 to_type_matrix 的值
@@ -113,7 +116,8 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         """
         return self.to_type_matrix()
 
-    @CachedProperty
+    #@CachedProperty # 缓存效果不明显
+    @property
     def matrix_T(self):
         return self.matrix.T
 
@@ -201,7 +205,9 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         """
         判断是否为合法的移动行为
         """
-        assert Action.is_move(action), "action %s is not a move-action" % action
+        #assert Action.is_move(action), "action %s is not a move-action" % action
+        if not Action.is_move(action): # 因为模拟地图导致了一些不可测的结果，这个地方不能 assert
+            return False               # 只要打一个补丁，开发的时候自己注意一下就好，记得 action % 4
 
         _FIELDS_CAN_MOVE_TO = ( Field.DUMMY, Field.EMPTY ) # 遇到坦克不能移动！
         x, y = tank.xy
@@ -223,7 +229,9 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         """
         判断是否为合法的设计行为
         """
-        assert Action.is_shoot(action), "action %s is not a shoot-action" % action
+        # assert Action.is_shoot(action), "action %s is not a shoot-action" % action
+        if not Action.is_shoot(action):
+            return False
         return not Action.is_shoot(tank.previousAction) # 只要不连续两回合射击都合理
 
     def is_valid_action(self, tank, action):
@@ -259,6 +267,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         _dy = Action.DIRECTION_OF_ACTION_Y
 
         _actions = [ blue_actions, red_actions ]
+        self._performedActionsRecord[self._turn] = _actions
         _fieldsToBeDestroyed = set() # 使用 set 避免重复
 
         # 记录老的 previous actions
@@ -394,6 +403,14 @@ class Tank2Map(Map, metaclass=SingletonMeta):
 
         return True
 
+    def undo_revert(self):
+        """
+        主动撤销后，再将 revert 这个动作撤销
+        """
+        nextTurn = self._turn + 1
+        assert nextTurn in self._performedActionsRecord, "no previously revert operation found"
+        actions = self._performedActionsRecord[nextTurn]
+        self.perform(*actions)
 
     def get_game_result(self):
         """

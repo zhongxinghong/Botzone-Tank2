@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:33:03
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-02 22:48:12
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-03 19:04:20
 """
 Botzone 终端类
 
@@ -91,10 +91,11 @@ class Tank2Botzone(Botzone, metaclass=SingletonMeta):
         super().__init__(long_running)
         self._mySide = -1
         self._map = map
-        self._pastActions = {
+        self._pastActions = { # 由 requests, responses 解析而来的历史动作记录
             (side, id_): [] for side in range(SIDE_COUNT)
                             for id_ in range(TANKS_PER_SIDE)
         }
+
 
     @property
     def turn(self):
@@ -179,8 +180,6 @@ class Tank2Botzone(Botzone, metaclass=SingletonMeta):
         获得某一坦克的历史决策
         """
         return self._pastActions.get( (side, id), [] ) # 没有记录则抛出 []
-
-
 
 
 #{ END }#

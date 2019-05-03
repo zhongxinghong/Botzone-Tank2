@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-24 22:04:40
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-03 00:02:22
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-04 00:59:26
 
 from core.const import LONG_RUNNING_MODE, SIMULATOR_ENV, MAP_WIDTH, MAP_HEIGHT,\
                     TANKS_PER_SIDE, SIDE_COUNT, BLUE_SIDE, RED_SIDE
-from core.global_ import time, np
-from core.utils import debug_print, simulator_print
+from core.global_ import time, sys, np
+from core.utils import DataSerializer, debug_print, simulator_print
 from core.map_ import Tank2Map
 from core.action import Action
 from core.stream import BotzoneIstream, BotzoneOstream
@@ -51,13 +51,12 @@ def main(istream=None, ostream=None):
         side = terminal.mySide
         tanks = map_.tanks
 
-        bluePlayer0 = Tank2Player(tanks[BLUE_SIDE][0], map_, terminal.get_past_actions(BLUE_SIDE, 0))
-        bluePlayer1 = Tank2Player(tanks[BLUE_SIDE][1], map_, terminal.get_past_actions(BLUE_SIDE, 1))
-        redPlayer0  = Tank2Player(tanks[RED_SIDE][0], map_, terminal.get_past_actions(RED_SIDE, 0))
-        redPlayer1  = Tank2Player(tanks[RED_SIDE][1], map_, terminal.get_past_actions(RED_SIDE, 1))
+        bluePlayer0 = Tank2Player(tanks[BLUE_SIDE][0], map_)
+        bluePlayer1 = Tank2Player(tanks[BLUE_SIDE][1], map_)
+        redPlayer0  = Tank2Player(tanks[RED_SIDE][0], map_)
+        redPlayer1  = Tank2Player(tanks[RED_SIDE][1], map_)
         bluePlayers = [bluePlayer0, bluePlayer1]
         redPlayers  = [redPlayer0, redPlayer1]
-
         bluePlayer0.set_teammate(bluePlayer1)
         bluePlayer1.set_teammate(bluePlayer0)
         redPlayer0.set_teammate(redPlayer1)
@@ -71,8 +70,17 @@ def main(istream=None, ostream=None):
         redTeam  = Tank2Team(RED_SIDE, redPlayer0, redPlayer1, map_)
         blueTeam.set_opponent_team(redTeam)
         redTeam.set_opponent_team(blueTeam)
+
         blueTeam.load_memory(memory[BLUE_SIDE])
         redTeam.load_memory(memory[RED_SIDE])
+        blueTeam.set_previous_actions([
+            terminal.get_past_actions(BLUE_SIDE, bluePlayer0.id),
+            terminal.get_past_actions(BLUE_SIDE, bluePlayer1.id),
+            ])
+        redTeam.set_previous_actions([
+            terminal.get_past_actions(RED_SIDE, redPlayer0.id),
+            terminal.get_past_actions(RED_SIDE, redPlayer1.id),
+            ])
 
         if side == BLUE_SIDE:
             myPlayer0  = bluePlayer0
@@ -94,20 +102,24 @@ def main(istream=None, ostream=None):
         actions = myTeam.make_decision()
 
         if SIMULATOR_ENV:
-            oppActions = oppActions = oppTeam.make_decision()
+            allStatus = [ player.get_status().copy() for player in myPlayers ]
+
+        if SIMULATOR_ENV:
+            oppActions = oppTeam.make_decision()
+            oppAllStatus = [ player.get_status().copy() for player in oppPlayers ]
 
         if SIMULATOR_ENV:
             _CUT_OFF_RULE = "-" * 20
             simulator_print("Decisions for next turn:")
             simulator_print(_CUT_OFF_RULE)
             _SIDE_NAMES = ["Blue", "Red"]
-            def _print_decision(actions, side, players):
+            def _print_decision(actions, side, allStatus):
                 for id_, action in enumerate(actions):
                     simulator_print("%s %02d: %s \t[status] %s" % (
                         _SIDE_NAMES[side], id_+1, Action.get_name(action),
-                        ", ".join( Status.get_name(status) for status in players[id_]._status ) ) )
-            _print_decision(actions, side, myPlayers)
-            _print_decision(oppActions, 1-side, oppPlayers)
+                        ", ".join( Status.get_name(status) for status in allStatus[id_] ) ) )
+            _print_decision(actions, side, allStatus)
+            _print_decision(oppActions, 1-side, oppAllStatus)
             simulator_print(_CUT_OFF_RULE)
             simulator_print("Actually actions on this turn:")
             simulator_print(_CUT_OFF_RULE)
@@ -131,7 +143,8 @@ def main(istream=None, ostream=None):
 
         debugInfo = {
 
-            "cost": round(t2-t1, 4),
+            "time": round(t2-t1, 4),
+            "storage": sys.getsizeof(DataSerializer.serialize(data))
 
             }
 
