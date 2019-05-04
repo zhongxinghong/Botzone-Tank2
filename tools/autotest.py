@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-04 02:40:01
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 04:22:48
+# @Last Modified time: 2019-05-04 15:11:26
 """
 自动化测试工具
 
@@ -55,7 +55,7 @@ def main():
         if os.path.exists(blueInputJSONFile):
             inputJSONFiles.append(blueInputJSONFile)
         if os.path.exists(redInputJSONFile):
-            inputJSONFiles.append(blueInputJSONFile)
+            inputJSONFiles.append(redInputJSONFile)
 
     inputJSONFiles = [ os.path.abspath(file) for file in inputJSONFiles ] # to abspath
 

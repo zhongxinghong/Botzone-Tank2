@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 03:53:17
+# @Last Modified time: 2019-05-04 14:47:56
 """
 地图类
 """
@@ -281,7 +281,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
                 if not self.is_valid_action(tank, action):
                     raise Exception("%s will perform an invalid action %s"
                                      % (tank, action) )
-                tank.previousAction = action # 缓存本次行为
+                tank.previousAction = action # 缓存本次行为，不考虑坦克是否已经挂掉
                 #simulator_print(tank.previousAction)
                 #debug_print(tank, action)
         #debug_print()

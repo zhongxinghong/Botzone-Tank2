@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @Author:   Rabbit
 # @Filename: botzone_tank2.py
-# @Date:     2019-05-04 05:14:05
+# @Date:     2019-05-04 15:28:53
 # @Description: Auto-built single-file Python script for Botzone/Tank2
 """
 MIT License
@@ -696,7 +696,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
                 if not self.is_valid_action(tank, action):
                     raise Exception("%s will perform an invalid action %s"
                                      % (tank, action) )
-                tank.previousAction = action # 缓存本次行为
+                tank.previousAction = action # 缓存本次行为，不考虑坦克是否已经挂掉
                 #simulator_print(tank.previousAction)
                 #debug_print(tank, action)
         #debug_print()
@@ -1547,7 +1547,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
 
     ## 找到最短的路径
 
-    dummyTail[1] = min(reachTargetNodeChains, # 最短路径
+    if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
+        dummyTail[1] = min(reachTargetNodeChains, # 最短路径
                         key=lambda node: _get_route_length_by_node_chain(node))
 
     return dummyTail
@@ -2738,6 +2739,7 @@ class Tank2Player(Player):
             # 如果是，那么就堵路
             #
             originRoute = oppBattler.get_shortest_attacking_route()
+            debug_print(oppBattler)
             blockingRoute = oppBattler.get_shortest_attacking_route( # 将我方坦克设为 Steel
                                     ignore_enemies=False, bypass_enemies=True)
             originRouteLen = get_route_length(originRoute)
@@ -3493,7 +3495,15 @@ class Tank2Player(Player):
 
         # (inserted) 准备破墙信号
         #--------------------------
-        # 1. 先为自己找后路，确保自己开墙后可以闪避
+        # 触发条件：
+        #
+        #   1. 对应于双方对峙，我方开好后路后触发某些条件强制破墙
+        #   2. 对方刚刚从墙后移开，我方存在后路，这个时候强制破墙
+        #
+        # 收到这个信号的时候，首先检查是否可以闪避
+        #
+        #   1. 如果可以闪避，就返回可以破墙的信号
+        #   2. 如果不可以闪避，就返回这回合准备后路的信号
         #
         if signal == Signal.PREPARE_FOR_BREAK_BRICK:
             self.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
@@ -3501,19 +3511,13 @@ class Tank2Player(Player):
             attackAction = battler.get_next_attack_action()
             oppTank = battler.get_enemy_behind_brick(attackAction)
 
-            _shouldUndoRevert = False
-            if oppTank is None: # 这种情况对应着敌人刚刚离开的情况
-                debug_print(map_._performedActionsRecord)
-                debug_print(map_.turn)
-                map_.revert()   # 因此回滚地图，退回到之前的情况
-                _shouldUndoRevert = True
+            _undoRevertTurns = 0
+            while oppTank is None: #　对应于敌方刚离开的那种触发条件
+                # 可能存在多轮回滚，因为别人的策略和我们的不一样！
+                # 给别人回滚的时候必须要考虑多回合！
+                map_.revert()
+                _undoRevertTurns += 1
                 oppTank = battler.get_enemy_behind_brick(attackAction)
-                # TODO:
-                #   Fix BUG here 5ccc5b27a51e681f0e8c37c8
-                #
-                if oppTank is None: # <- BUG
-                    map_.undo_revert()
-                    return ( Action.INVALID, Signal.UNHANDLED )
 
             self._riskyEnemy = BattleTank(oppTank) # 重新设置这个敌人！
             assert oppTank is not None
@@ -3532,7 +3536,7 @@ class Tank2Player(Player):
                 self.set_status(Status.READY_TO_BREAK_BRICK)
                 res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
 
-            if _shouldUndoRevert:
+            for _ in range(_undoRevertTurns):
                 map_.undo_revert()
 
             return res
@@ -3860,9 +3864,6 @@ class Tank2Team(Team):
 
 
 
-
-
-
         # 检查是否有队员处在僵持阶段
         #--------------------------
         # 1. 双方均在墙后僵持不前进因为
@@ -3963,6 +3964,15 @@ class Tank2Team(Team):
                 if signal3 == Signal.READY_TO_BREAK_BRICK: # 可以破墙，则选择破墙
                     returnActions[idx] = action3
                     hasTeamActions[idx] = True
+
+
+
+
+        # TODO: 主动破墙之二打一
+        #---------------------------
+        # 如果遇到两个人隔着两个墙对着一个敌人的时候，就直接破墙
+        #
+
 
 
         # 主动打破重叠的信号

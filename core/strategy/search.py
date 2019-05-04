@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 00:37:02
+# @Last Modified time: 2019-05-04 14:30:39
 """
 BFS 搜索最短路径的工具库
 
@@ -493,7 +493,8 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
 
     ## 找到最短的路径
 
-    dummyTail[1] = min(reachTargetNodeChains, # 最短路径
+    if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
+        dummyTail[1] = min(reachTargetNodeChains, # 最短路径
                         key=lambda node: _get_route_length_by_node_chain(node))
 
     return dummyTail
