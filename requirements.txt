@@ -1,3 +1,5 @@
 numpy==1.15.1
 requests==2.6.0
-selenium==3.11.0
+APScheduler==3.6.0
+lxml==4.2.0
+simplejson==3.16.0

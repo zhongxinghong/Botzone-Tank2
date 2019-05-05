@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 11:41:00
 # @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-02 22:50:57
+# @Last Modified time: 2019-05-05 18:41:45
 
 __all__ = [
 
@@ -76,6 +76,8 @@ class SimulatorConsoleOutputStream(AbstractBotzoneOstream):
             _raw = json.loads(data)
             _data = { k:v for k,v in _raw.items() if k != "data" }
             if "data" in _raw:
+                _data["data"] = "hidden"
+            if "globaldata" in _raw:
                 _data["data"] = "hidden"
 
         if not self._pretty:

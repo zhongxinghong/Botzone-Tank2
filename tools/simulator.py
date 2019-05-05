@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 11:25:35
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 03:09:51
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-05 18:40:38
 """
 无 GUI 的游戏模拟器，可以模拟播放比赛记录
 
@@ -29,22 +29,21 @@ except json.JSONDecodeError as e: # 配置文件写错
     raise e
 
 ## 环境变量设置 ##
-game_const.DEBUG_MODE        = config["environment"]["debug"]
-game_const.LONG_RUNNING_MODE = config["environment"]["long_running"]
-game_const.SIMULATOR_ENV     = config["environment"]["simulator"]
-game_const.COMPACT_MAP       = config["debug"]["compact_map"]
-game_const.SIMULATOR_PRINT   = config["simulator"]["print"]
+game_const.DEBUG_MODE        = config["environment"]["debug"]         # 是否为 DEBUG 模式
+game_const.LONG_RUNNING_MODE = config["environment"]["long_running"]  # 是否为 LONG_RUNNING 模式
+game_const.SIMULATOR_ENV     = config["environment"]["simulator"]     # 是否为模拟器环境
+game_const.COMPACT_MAP       = config["debug"]["compact_map"]         # 是否以紧凑的形式打印地图
+game_const.SIMULATOR_PRINT   = config["simulator"]["print"]           # 是否输出模拟器日志
 
 ## 游戏相关 ##
-MATCH_ID     = config["game"]["match_id"]
-SIDE         = config["game"]["side"]
-INITIAL_TURN = config["game"]["initial_turn"]
+MATCH_ID     = config["game"]["match_id"]      # 比赛 ID
+INITIAL_TURN = config["game"]["initial_turn"]  # 从哪一回合开始
 
 ## 模拟器配置 ##
-TURN_INTERVAL  = config["simulator"]["turn_interval"]
-PAUSE_PER_TURN = config["simulator"]["pause"]
-DATA_SOURCE    = config["simulator"]["data_source"]
-HIDE_DATA      = config["simulator"]["hide_data"]
+TURN_INTERVAL  = config["simulator"]["turn_interval"]  #　在自动播放的情况下，每回合结束后时间间隔
+PAUSE_PER_TURN = config["simulator"]["pause"]          # 设置为非自动播放，每回合结束后需要用户按下任意键继续
+DATA_SOURCE    = config["simulator"]["data_source"]    #　数据源 0 表示 blue.input.json, 1 表示 red.input.json
+HIDE_DATA      = config["simulator"]["hide_data"]      # 是否隐藏游戏输出 json 中的 data 和 globaldata 字段
 
 
 def main():
@@ -89,7 +88,9 @@ def main():
         if p.exitcode != 0:
             break
 
-        data = json.loads(output).get("data")
+        outputJSON = json.loads(output)
+        data = outputJSON.get("data")
+        globaldata = outputJSON.get("globaldata")
 
         print(CUT_OFF_RULE)
         print("End Turn %s" % turn)

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-28 01:46:07
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 03:24:27
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-05 16:53:08
 
 __all__ = [
 
@@ -10,8 +10,10 @@ __all__ = [
 
     ]
 
+import os
 import requests
 from ..utils import json_load, json_dump
+from ..const import CACHE_DIR
 
 
 class BaseClient(object):
@@ -32,3 +34,10 @@ class BaseClient(object):
 
     def _post(self, url, data=None, json=None, **kwargs):
         return self._request('POST', url, data=data, json=json, **kwargs)
+
+    @staticmethod
+    def _save_content(r, filename):
+        file = os.path.join(CACHE_DIR, filename)
+        with open(file, "wb") as fp:
+            fp.write(r.content)
+

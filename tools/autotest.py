@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-04 02:40:01
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 15:11:26
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-05 18:40:28
 """
 自动化测试工具
 
@@ -98,7 +98,9 @@ def main():
             if p.exitcode != 0:
                 break
 
-            data = json.loads(output).get("data")
+            outputJSON = json.loads(output)
+            data = outputJSON.get("data")
+            globaldata = outputJSON.get("globaldata")
 
         if data is not None:
             inputJSON["data"] = data

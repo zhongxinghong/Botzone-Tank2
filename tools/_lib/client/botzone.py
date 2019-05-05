@@ -1,65 +1,100 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-28 02:23:29
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 02:50:39
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-05 18:33:42
 
 __all__ = [
 
+    "BotzoneClient",
 
     ]
 
 import os
+import time
+from .const import USER_AGENT
+from .const import BOTZONE_URL_HOST, BOTZONE_URL_LOGIN, BOTZONE_URL_MYBOTS, BOTZONE_URL_BOT_DETAIL
 from .base import BaseClient
 from .cookies import CookiesManagerMixin
 from .hooks import get_hooks, hook_check_status_code, hook_botzone_check_success_field
-from ..utils import Singleton, json_load
-from ..const import CONFIG_DIR
+from ..utils import Singleton
+from ..log import ConsoleLogger
 
 
-_USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.103 Safari/537.36"
-
-_BOTZONE_USER_JSON_FILE = os.path.abspath(os.path.join(CONFIG_DIR, "botzone_user.json"))
+_logger = ConsoleLogger("client.botzone")
 
 
 class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
 
     HEADERS = {
-        "User-Agent": _USER_AGENT,
-        "Origin": "https://botzone.org.cn",
+        "User-Agent": USER_AGENT,
+        "Origin": BOTZONE_URL_HOST,
+        "x-requested-with": "XMLHttpRequest",
         }
 
     def __init__(self):
         BaseClient.__init__(self)
         CookiesManagerMixin.__init__(self)
         self._session.cookies = self._load_cookies() # 创建时自动导入本地 cookies
+        _logger.info("load cookies")
 
-    def login(self):
+
+    def login(self, email, password):
         """
-        登录接口
+        登录 API
+
         """
-        userInfo = json_load(_BOTZONE_USER_JSON_FILE)
-        if userInfo is None:
-            raise Exception("can't load user config from %r" % _BOTZONE_USER_JSON_FILE)
+        _logger.info("Email: %s" % email)
+        _logger.info("login ...")
 
-        email    = userInfo.get("email")
-        password = userInfo.get("password")
-
-        if email is None:
-            raise Exception("field 'email' is missing")
-        if password is None:
-            raise Exception("field 'password' is missing")
-
-        r = self._post(
-                "https://botzone.org.cn/login",
+        r = self._post(BOTZONE_URL_LOGIN,
                 data={
                     "email": email,
                     "password": password,
                 }, headers={
-                    "Referer": "https://botzone.org.cn/",
-                    "x-requested-with": "XMLHttpRequest",
+                    "Referer": BOTZONE_URL_HOST,
                 }, hooks=get_hooks(hook_check_status_code,
                                    hook_botzone_check_success_field),
             )
 
+        _logger.info("login successfully")
+
         self._save_cookies() # 保存 cookies
+
+        _logger.info("save login cookies")
+        #self._save_content(r, "login.html")
+        return r
+
+
+    def get_mybots(self):
+        """
+        获取 My Bots 页
+
+        """
+        _logger.info("get mybots ...")
+
+        r = self._get(BOTZONE_URL_MYBOTS)
+
+        _logger.info("get mybots successfully")
+        #self._save_content(r, "mybots.html")
+        return r
+
+
+    def get_bot_detail(self, botID):
+        """
+        获取 Bot 全部具体信息的 API
+
+        """
+        _logger.info("BotID: %s" % botID)
+        _logger.info("get bot detail ...")
+
+        r = self._get(BOTZONE_URL_BOT_DETAIL.format(botID=botID),
+                params={
+                    "_": int( time.time() * 1000 ),
+                }, headers={
+                    "Referer": BOTZONE_URL_MYBOTS,
+                })
+
+        _logger.info("get bot detail successfully")
+        #self._save_content(r, "bot_detail_%s.json" % botID)
+        return r
