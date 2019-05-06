@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @Author:   Rabbit
 # @Filename: botzone_tank2.py
-# @Date:     2019-05-04 15:28:53
+# @Date:     2019-05-07 05:26:10
 # @Description: Auto-built single-file Python script for Botzone/Tank2
 """
 MIT License
@@ -1001,6 +1001,7 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     HAS_ENEMY_BEHIND_BRICK = 29  # 隔墙有人
     PREVENT_BEING_KILLED   = 30  # 为了防止被射击而停下
     HUNTING_ENEMY          = 31  # 主动追杀敌军
+    ACTIVE_DEFENSIVE       = 32  # 主动防御状态
 
     READY_TO_PREPARE_FOR_BREAK_BRICK = 41 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK   = 42 # 准备破墙
@@ -2566,6 +2567,26 @@ class Tank2Player(Player):
         """
         return status in self._status
 
+    def has_status_in_previous_turns(self, status, turns=1, player=None):
+        """
+        非常丑陋的设计
+        --------------
+        本来决定只让 team 来管理团队记忆，但是后来发现有些需要靠记忆进行决策的单人行为
+        也要通过团队通过信号进行触发，这实在是太麻烦、低效、且不直截了。玩家也应该拥有记忆。
+        因此这里就把 team 的一个关键的状态记忆查找函数代理到这里，用于玩家查找自己的记忆。
+
+        但是这就导致设计上存在了上下互相依赖的糟糕设计，也就是 player 作为 team 的组成
+        他竟然代理了 team 的函数。
+
+        这一定程度上反映了这个架构仍然是存在很多设计不周的地方的
+
+        (2019.05.07)
+
+        """
+        if player is None: # 与 team 的函数不同，此处默认 player 为 self
+            player = self  # 如果需要设定为敌人，那么需要特别指定，不过可能是违背设计原则的行为
+        return self._team.has_status_in_previous_turns(player, status, turns=turns)
+
     def get_risky_enemy_battler(self):
         """
         引起预期行为被拒的敌人，因为该敌人有可能在我方采用预期行为的下一回合将我方击杀
@@ -2633,7 +2654,7 @@ class Tank2Player(Player):
                     for enemy in oppBattler.get_enemies_around():
                         if enemy is tank: # 敌方原地不动或移动一步后，能够看到该坦克
                             # 还可以尝试回避
-                            actions = battler.try_dodge(enemy)
+                            actions = battler.try_dodge(oppBattler)
                             if len(actions) == 0: # 无法回避，危险行为
                                 map_.revert()
                                 map_.revert() # 再回退外层模拟
@@ -2920,6 +2941,10 @@ class Tank2Player(Player):
                     # 无所谓的办法了...
                     return self.try_make_decision(battler.get_next_attack_action())
 
+            # TODO:
+            #   虽然说遇到了两个一条线上的敌人，但是这不意味着后一个敌人就没有威胁 5ccee460a51e681f0e8e5b17
+
+
             # 当前情况：
             # ---------
             # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
@@ -3014,9 +3039,20 @@ class Tank2Player(Player):
                     #
                     if status == Status.STALEMENT:
                         # 首先把堵路的思路先做了，如果不能射击，那么同 aggressive
-                        if battler.canShoot:
-                            self.set_status(Status.READY_TO_BLOCK_ROAD, Status.READY_TO_FIGHT_BACK)
-                            return battler.shoot_to(oppBattler)
+                        # TODO:
+                        #   有的时候这并不是堵路，而是在拖时间！ 5ccf84eca51e681f0e8ede59
+
+                        # 上一回合保持重叠，但是却被敌人先过了，这种时候不宜僵持，应该直接走人
+                        # 这种情况下直接转为侵略模式！
+                        if (self.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                            and (self.has_status_in_previous_turns(Status.READY_TO_BLOCK_ROAD, turns=1)
+                                or self.has_status_in_previous_turns(Status.KEEP_ON_OVERLAPPING, turns=1))
+                            ):
+                            pass # 直接过到侵略模式
+                        else: # 否则算作正常的防守
+                            if battler.canShoot:
+                                self.set_status(Status.READY_TO_BLOCK_ROAD, Status.READY_TO_FIGHT_BACK)
+                                return battler.shoot_to(oppBattler)
 
                     # 闪避，尝试找最佳方案
                     #-------------------------
@@ -3052,10 +3088,15 @@ class Tank2Player(Player):
                                     self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
                                     return realAction
 
-                    # 没有不能不导致路线变长的办法
-                    # 但是如果能闪避终究还是要闪避的 ...
-                    # 5ccca87ba51e681f0e8c7358
-                    #---------------------------------
+                    # 没有不能不导致路线编程的办法，如果有炮弹，那么优先射击！
+                    # 5ccef443a51e681f0e8e64d8
+                    #-----------------------------------
+                    if Action.is_shoot(defenseAction):
+                        self.set_status(Status.READY_TO_FIGHT_BACK)
+                        return defenseAction
+
+                    # 如果不能射击，那么终究还是要闪避的
+                    #----------------------------------
                     for action in actions:
                         if Action.is_move(action):
                             realAction = self.try_make_decision(action)
@@ -3063,12 +3104,7 @@ class Tank2Player(Player):
                                 self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
                                 return realAction
 
-                    # 不能闪避，或者闪避路线不佳，只好还击
-                    #------------------------------
-                    if Action.is_shoot(defenseAction):
-                        self.set_status(Status.READY_TO_FIGHT_BACK)
-                    else: # 没有炮弹，凉了 ...
-                        self.set_status(Status.DYING)
+                    self.set_status(Status.DYING) # 否则就凉了 ...
                     return defenseAction
 
                 # 所有其他的情况？
@@ -3408,6 +3444,9 @@ class Tank2Player(Player):
         status = assess_aggressive(battler, oppBattler)
         self.set_status(status)
 
+
+        # 暂时禁用主动防御！目前开发得太不完善了，容易反而延误战机
+
         # 主动防御策略
         #---------------------
         # TODO:
@@ -3418,6 +3457,7 @@ class Tank2Player(Player):
         # 3. TODO:
         #       尽可能少拆自己基地的外墙 ...
         #
+        """
         if status == Status.DEFENSIVE: # 防御性的，就触发主动防御
             #
             #   前期如果过早决策为 Defensive 可能会错失战机，因为并不是每个人都会使用相同
@@ -3485,7 +3525,47 @@ class Tank2Player(Player):
         #　侵略性的，那么主动进攻
         else:
             pass
+        """
 
+
+        # 重写主动防御策略
+        #-----------------------
+        # 不要追击敌人，而是选择保守堵路策略！
+        #
+        # 1. 对于路线差为 2 的情况，选择堵路，而非重叠
+        # 2. 如果自己正常行军将会射击，那么判断射击所摧毁的块是否为敌人进攻路线上的块
+        #    如果是，则改为己方改为移动或者停止
+        #
+        if status == Status.DEFENSIVE:
+            # 判断路线是否为 2
+            #-------------------
+            # 如果是路线为 2
+            # 则选择不重叠，只堵路
+            #
+            _route = battler.get_route_to_enemy_by_movement(oppBattler)
+            routeLen = get_route_length(_route)
+            assert routeLen != INFINITY_ROUTE_LENGTH, "route not found ?" # 必定能找到路！
+            assert routeLen > 0, "unexpected overlapping enemy"
+            if routeLen == 2:
+                self.set_status(Status.READY_TO_BLOCK_ROAD)
+                return Action.STAY
+            # 判断自己的下一步是否为敌人开路
+            #-------------------------
+            # 如果自己下一个行为是射击，然后所射掉的块为敌人进攻路线上的块
+            # 那么将这个动作转为移动或者停止
+            #
+            attackAction = battler.get_next_attack_action()
+            realAction = self.try_make_decision(attackAction)
+            if Action.is_shoot(realAction):
+                fields = battler.get_destroyed_fields_if_shoot(realAction)
+                if len(fields) == 1:
+                    field = fields[0]
+                    if isinstance(field, BrickField):
+                        enemyAttackRoute = oppBattler.get_shortest_attacking_route()
+                        if is_block_in_route(field, enemyAttackRoute): # 打掉的 Brick 在敌人进攻路线上
+                            self.set_status(Status.ACTIVE_DEFENSIVE)
+                            moveAction = realAction - 4
+                            return self.try_make_decision(moveAction) # 移动/停止
 
 
         #///////////#
@@ -3900,6 +3980,14 @@ class Tank2Team(Team):
 
                 # elif signal3 == Signal.READY_TO_BREAK_BRICK:
                 # 否则将受到破墙信号，开始判断是否符合破墙条件
+
+                oppBattler = player.get_risky_enemy_battler() # 获得墙后敌人
+                oppPlayer = Tank2Player(oppBattler)
+                if oppPlayer.has_status(Status.ENCOUNT_ENEMY): # 发现敌人和队友相遇，立即破墙
+                    returnActions[idx] = action3
+                    hasTeamActions[idx] = True
+                    continue # 至此完成单人决策
+
 
                 playerIdx   = idx
                 teammateIdx = 1 - idx

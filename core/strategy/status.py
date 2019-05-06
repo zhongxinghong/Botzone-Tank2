@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-01 18:00:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-03 22:38:09
+# @Last Modified time: 2019-05-07 04:18:54
 """
 当前状态
 
@@ -50,6 +50,7 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     HAS_ENEMY_BEHIND_BRICK = 29  # 隔墙有人
     PREVENT_BEING_KILLED   = 30  # 为了防止被射击而停下
     HUNTING_ENEMY          = 31  # 主动追杀敌军
+    ACTIVE_DEFENSIVE       = 32  # 主动防御状态
 
     READY_TO_PREPARE_FOR_BREAK_BRICK = 41 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK   = 42 # 准备破墙

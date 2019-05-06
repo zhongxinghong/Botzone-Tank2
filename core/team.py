@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 05:17:07
+# @Last Modified time: 2019-05-07 04:37:37
 """
 游戏团队类
 --------------------------------------------
@@ -339,6 +339,14 @@ class Tank2Team(Team):
 
                 # elif signal3 == Signal.READY_TO_BREAK_BRICK:
                 # 否则将受到破墙信号，开始判断是否符合破墙条件
+
+                oppBattler = player.get_risky_enemy_battler() # 获得墙后敌人
+                oppPlayer = Tank2Player(oppBattler)
+                if oppPlayer.has_status(Status.ENCOUNT_ENEMY): # 发现敌人和队友相遇，立即破墙
+                    returnActions[idx] = action3
+                    hasTeamActions[idx] = True
+                    continue # 至此完成单人决策
+
 
                 playerIdx   = idx
                 teammateIdx = 1 - idx
