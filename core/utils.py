@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-02 14:18:50
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-09 05:43:23
 """
 工具类
 """
@@ -15,6 +15,8 @@ __all__ = [
     "simulator_print",
     "simulator_pprint",
 
+    "outer_label",
+
     "CachedProperty",
     "SingletonMeta",
     "UniqueIntEnumMeta",
@@ -24,7 +26,7 @@ __all__ = [
     ]
 
 from .const import DEBUG_MODE, SIMULATOR_ENV, SIMULATOR_PRINT
-from .global_ import pprint, pickle, base64, gzip
+from .global_ import pprint, pickle, base64, gzip, contextmanager
 
 #{ BEGIN }#
 
@@ -43,6 +45,19 @@ if SIMULATOR_ENV and SIMULATOR_PRINT:
 else:
     simulator_print  = _null_func
     simulator_pprint = _null_func
+
+
+@contextmanager
+def outer_label():
+    """
+    用于直接打断外层循环
+    """
+    class OuterBreakException(Exception):
+        pass
+    try:
+        yield OuterBreakException
+    except OuterBreakException:
+        pass
 
 
 class _Missing(object):

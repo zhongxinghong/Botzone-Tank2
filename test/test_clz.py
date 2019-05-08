@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 20:37:33
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-09 01:06:39
+
+from typing import Iterable
 
 class Tank(object):
 
@@ -66,6 +68,16 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
         return -1
 
 
+class Route(object):
+
+    def __init__(self, items):
+        self._items = items
+
+    def __iter__(self):
+        #for xy in self._items:
+        #    yield xy
+        yield from self._items
+
 '''
 for _ in range(3):
     a = Tank("Blue 1")
@@ -81,6 +93,18 @@ print(d)
 
 '''
 
-print(Signal.A)
-print(Signal.B)
-print(Signal.C) # 未变 ！
+#print(Signal.A)
+#print(Signal.B)
+#print(Signal.C) # 未变 ！
+
+
+route = Route([ (1,2), (3,4), (4,5) ])
+
+print(isinstance(route, Iterable))
+
+it = iter(route)
+
+print(it)
+
+for node in route:
+    print(node)

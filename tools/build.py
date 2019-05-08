@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:25
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 02:46:10
+# @Last Modified time: 2019-05-07 21:56:35
 """
 项目自动化构建工具
 --------------------------
@@ -37,6 +37,7 @@ config = json_load(CONFIG_JSON_FILE)
 AUTHOR       = config["header"]["author"]
 LICENSE_FILE = config["header"]["license"]
 DESCRIPTION  = config["header"]["description"]
+SITE         = config["header"]["site"]
 FILENAME     = config["filename"]
 SOURCES_LIST = config["sources"]
 
@@ -46,10 +47,11 @@ LICENSE      = read_file(LICENSE_FILE) if LICENSE_FILE else None
 
 HEADER = f'''\
 # -*- coding: utf-8 -*-
-# @Author:   { AUTHOR }
-# @Filename: { FILENAME }
-# @Date:     { time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())) }
-# @Description: { DESCRIPTION or "" }
+# @author:      { AUTHOR }
+# @filename:    { FILENAME }
+# @date:        { time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())) }
+# @site:        { SITE }
+# @description: { DESCRIPTION or "" }
 '''
 
 if LICENSE is not None:

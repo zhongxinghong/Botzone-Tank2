@@ -5,7 +5,8 @@
     {
         "author": "Rabbit",
         "license": "../LICENSE",
-        "description": "Auto-built single-file Python script for Botzone/Tank2"
+        "site": "https://github.com/zhongxinghong/Botzone-Tank2",
+        "description": "Automatically built Python single-file script for Botzone/Tank2 game"
     },
 
     "sources": [
@@ -48,6 +49,10 @@
     {
         "package": "strategy",
         "file": "../core/strategy/utils.py"
+    },
+    {
+        "package": "strategy",
+        "file": "../core/strategy/route.py"
     },
     {
         "package": "strategy",

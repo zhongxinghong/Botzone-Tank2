@@ -1,25 +1,19 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 14:30:39
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-09 06:01:46
 """
 BFS 搜索最短路径的工具库
-
-
-WARNING:
-
-1. 一定要使用 get_route_length 来求得路线长度，而不是 len(route)
-2. 一定要记得 get_route_length 会在路线找不到的情况下，返回 INFINITY_ROUTE_LENGTH
-   要对这个特殊值进行判断！
 
 """
 
 __all__ = [
 
+    "find_all_routes_for_move",
+    "find_all_routes_for_shoot",
     "find_shortest_route_for_move",
     "find_shortest_route_for_shoot",
-    "get_route_length",
 
     "get_searching_directions",
 
@@ -29,19 +23,14 @@ __all__ = [
     "DEFAULT_BLOCK_TYPES",
     "DEFAULT_DESTROYABLE_TYPES"
 
-    "INFINITY_WEIGHT",
-    "INFINITY_ROUTE_LENGTH",
-
-    "NONE_ACTION_ON_BFS",
-    "MOVE_ACTION_ON_BFS",
-    "SHOOT_ACTION_ON_BFS",
-
     ]
 
 from ..const import DEBUG_MODE, MAP_WIDTH, MAP_HEIGHT
 from ..global_ import np, deque
 from ..utils import debug_print, debug_pprint
 from ..field import Field, BASE_FIELD_TYPES, TANK_FIELD_TYPES
+from .route import Route, INFINITY_ROUTE_LENGTH, INFINITY_WEIGHT, DUMMY_ACTION,\
+                    NONE_ACTION, MOVE_ACTION, SHOOT_ACTION, NONE_POINT
 
 #{ BEGIN }#
 
@@ -65,14 +54,6 @@ DEFAULT_DESTROYABLE_TYPES = ( Field.BRICK, )
 # 1. 两方基地
 # 2. 己方坦克和对方坦克
 #------------------------
-
-INFINITY_WEIGHT       = -1 # 无穷大的权重，相当于不允许到达
-INFINITY_ROUTE_LENGTH = -1 # 无穷大的路径长度，相当于无法找到
-
-DUMMY_ACTION_ON_BFS = -2 # 空行为
-NONE_ACTION_ON_BFS  = -1 #　上回合什么都不做，相当于停止，专门用于 start == end 的情况
-MOVE_ACTION_ON_BFS  = 0  # 上一回合操作标记为搜索
-SHOOT_ACTION_ON_BFS = 1  # 上一回合操作标记为射击
 
 
 def get_searching_directions(x1, y1, x2=None, y2=None, x_axis_first=False,
@@ -128,11 +109,11 @@ def get_searching_directions(x1, y1, x2=None, y2=None, x_axis_first=False,
     raise Exception
 
 
-def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
-                         block_types=DEFAULT_BLOCK_TYPES, x_axis_first=False,
-                         middle_first=False):
+def _BFS_search_all_routes_for_move(start, end, map_matrix_T, weight_matrix_T,
+                                    block_types=DEFAULT_BLOCK_TYPES, x_axis_first=False,
+                                    middle_first=False):
     """
-    BFS 搜索从 start -> end 的最短路径，带权重
+    BFS 搜索从 start -> end 的所有路径路径，由短到长依次返回
     ----------------------------------------------------------------------------
 
     Input:
@@ -154,15 +135,9 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
 
         - middle_first      bool        是否采用中路优先的搜索
 
-    Return:
+    Yield From:
 
-        - dummy_tail        Node        end 节点后的空节点：
-                                        -------------------
-                                        1. 如果本次搜索找到路径，则其 parent 属性指向 end 节点，
-                                        可以连成一条 endNode -> startNode 的路径。
-                                        2. 如果传入的 start == end 则 startNode == endNode
-                                        这个节点的 parent 指向 startNode 。
-                                        3. 如果没有搜索到可以到达的路线，则其 parent 值为 None
+        - routes            [Route]     所有可以到达的路径。如果没有搜索到可以到达的路径，则返回空路径
 
     ----------------------------------------------------------------------------
 
@@ -199,15 +174,7 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
         None,
         0, # 初始节点本来就已经到达了
         0, # 初始节点不耗费步数
-        NONE_ACTION_ON_BFS,
-        ]
-
-    dummyTail = [ # end 节点后的空节点
-        (-1, -1),
-        None, #　当找到 end 的时候，这个值指向 end，否则保持为 None
-        -1,
-        -1,
-        DUMMY_ACTION_ON_BFS,
+        NONE_ACTION,
         ]
 
     queue  = deque() # queue( [Node] )
@@ -217,6 +184,8 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
         matrixDistance = np.full_like(matrixMap, -1)
 
     queue.append(startNode) # init
+
+    _foundRoute = False
 
     while len(queue) > 0:
 
@@ -237,8 +206,9 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
 
         if (x, y) == end: # 到达终点
-            dummyTail[1] = node
-            break
+            _foundRoute = True
+            yield Route(node)
+            continue
 
         for dx, dy in get_searching_directions(x1, x2, y1, y2,
                                                x_axis_first=x_axis_first,
@@ -256,22 +226,23 @@ def _BFS_search_for_move(start, end, map_matrix_T, weight_matrix_T,
                 node,
                 weight-1,
                 weight,
-                MOVE_ACTION_ON_BFS,
+                MOVE_ACTION,
                 ])
     '''
     if DEBUG_MODE:
         debug_print("distance matrix:\n", matrixDistance.T)
     '''
 
-    return dummyTail
+    if not _foundRoute:
+        yield Route() # 空节点
 
 
-def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
-                          shoot_weight_matrix_T, block_types=DEFAULT_BLOCK_TYPES,
-                          destroyable_types=DEFAULT_DESTROYABLE_TYPES,
-                          x_axis_first=False, middle_first=False):
+def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
+                                     shoot_weight_matrix_T, block_types=DEFAULT_BLOCK_TYPES,
+                                     destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                                     x_axis_first=False, middle_first=False):
     """
-    BFS 搜索从 start 开始到击中 end 的最短路线，带权重
+    BFS 搜索从 start 开始到击中 end 的所有路径，由短到长依次返回
     ----------------------------------------------------------------------------
 
     实现思路：
@@ -312,15 +283,9 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
 
         - middle_first          bool    是否采用中路优先的搜索
 
-    Return:
+    Yield From:
 
-        - dummy_tail        Node        end 节点后的空节点：
-                                        -------------------
-                                        1. 如果本次搜索找到路径，则其 parent 属性指向 end 节点，
-                                        可以连成一条 endNode -> startNode 的路径。
-                                        2. 如果传入的 start == end 则 startNode == endNode
-                                        这个节点的 parent 指向 startNode 。
-                                        3. 如果没有搜索到可以到达的路线，则其 parent 值为 None
+        - routes            [Route]     所有可以到达的路径。如果没有搜索到可以到达的路径，则返回空路径
 
     --------------------------------------------------------------------------
 
@@ -384,15 +349,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
         None,
         0, # 初始节点本来就已经到达了
         0, # 初始节点不耗费步数
-        NONE_ACTION_ON_BFS, # 对于 start == end 的情况，将返回 startNode，相当于原地等待
-        ]
-
-    dummyTail = [
-        (-1, -1),
-        None,
-        -1,
-        -1,
-        DUMMY_ACTION_ON_BFS,
+        NONE_ACTION, # 对于 start == end 的情况，将返回 startNode，相当于原地等待
         ]
 
     queue  = deque() # queue( [Node] )
@@ -448,7 +405,7 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                 node,
                 weight-1,
                 weight,
-                MOVE_ACTION_ON_BFS,
+                MOVE_ACTION,
                 ])
 
 
@@ -458,13 +415,9 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
 
     ## 接下来对于每个节点，尝试通过射击的方式走完剩下的路程
 
-    reachTargetNodeChains = [] # 收集所有可以成功射击到基地的路线
+    _foundRoute = False
 
     for xy, node in canShootNodeChains.items():
-
-        if xy == end:
-            reachTargetNodeChains.append(node)
-            continue
 
         # 确定攻击方向
         x3, y3 = xy
@@ -472,6 +425,12 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
         dy = np.sign(y2 - y3)
 
         while True:
+
+            if (x3, y3) == end: # 到达目标
+                _foundRoute = True
+                yield Route(node)
+                break
+
             x3 += dx
             y3 += dy
             weight = matrixShootWeight[x3, y3]
@@ -481,35 +440,34 @@ def _BFS_search_for_shoot(start, end, map_matrix_T, move_weight_matrix_T,
                 node,
                 weight-1, # 补偿
                 weight,
-                SHOOT_ACTION_ON_BFS,
+                SHOOT_ACTION,
                 ]
 
-            if (x3, y3) == end: # 到达目标
-                reachTargetNodeChains.append(node)
-                break
 
     #debug_print( [_get_route_length_by_node_chain(node) for node in reachTargetNodeChains] )
 
-
     ## 找到最短的路径
 
-    if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
-        dummyTail[1] = min(reachTargetNodeChains, # 最短路径
+    #if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
+        '''dummyTail[1] = min(reachTargetNodeChains, # 最短路径
                         key=lambda node: _get_route_length_by_node_chain(node))
+        '''
 
-    return dummyTail
+    if not _foundRoute:
+        yield Route()
 
 
-def find_shortest_route_for_move(start, end, matrix_T, block_types=DEFAULT_BLOCK_TYPES,
-                                 x_axis_first=False, middle_first=False):
+def find_all_routes_for_move(start, end, matrix_T,
+                             block_types=DEFAULT_BLOCK_TYPES,
+                             x_axis_first=False, middle_first=False):
     """
-    搜索移动到目标的最短路线
+    搜索移动到目标的所有路径
 
     Input:
         - matrix_T   np.array( [[int]] )   游戏地图的类型矩阵的转置
 
-    Return:
-        - route   [(x: int, y: int, weight: int, BFSAction: int)]   带权重值的路径
+    Yield From:
+        - route      Route
     """
     matrixMap = matrix_T
 
@@ -518,34 +476,22 @@ def find_shortest_route_for_move(start, end, matrix_T, block_types=DEFAULT_BLOCK
     matrixWeight[matrixMap == Field.STEEL] = INFINITY_WEIGHT
     matrixWeight[matrixMap == Field.WATER] = INFINITY_WEIGHT
 
-    dummyTail = _BFS_search_for_move(start, end, matrixMap, matrixWeight,
-                                    block_types=block_types,
-                                    x_axis_first=x_axis_first,
-                                    middle_first=middle_first)
+    routes = _BFS_search_all_routes_for_move(
+                    start, end, matrixMap, matrixWeight, block_types=block_types,
+                    x_axis_first=x_axis_first, middle_first=middle_first)
 
-    route = []
-    node = dummyTail
-    while True:
-        node = node[1]
-        if node is not None:
-            x, y      = node[0]
-            weight    = node[3]
-            BFSAction = node[4]
-            route.append( (x, y, weight, BFSAction) )
-        else:
-            break
-    route.reverse()
-    return route
+    yield from routes
 
 
-def find_shortest_route_for_shoot(start, end, matrix_T,
-                                  block_types=DEFAULT_BLOCK_TYPES,
-                                  destroyable_types=DEFAULT_DESTROYABLE_TYPES,
-                                  x_axis_first=False,
-                                  middle_first=False):
+def find_all_routes_for_shoot(start, end, matrix_T,
+                              block_types=DEFAULT_BLOCK_TYPES,
+                              destroyable_types=DEFAULT_DESTROYABLE_TYPES,
+                              x_axis_first=False,
+                              middle_first=False):
     """
-    搜索移动并射击掉目标的最短路线
+    搜索移动并射击掉目标的所有路径
 
+    输入输出同上
     """
     matrixMap = matrix_T
 
@@ -565,57 +511,50 @@ def find_shortest_route_for_shoot(start, end, matrix_T,
     #   这里只是从理论上分析 TANK, BASE 被打掉对应的权重，实际上我们不希望基地和队友
     #   被打掉，因此在实际使用时，仅仅在 destroyable_types 中添加敌方的坦克即可
 
+    routes = _BFS_search_all_routes_for_shoot(
+                    start, end, matrixMap, matrixMoveWeight, matrixShootWeight,
+                    block_types=block_types, destroyable_types=destroyable_types,
+                    x_axis_first=x_axis_first, middle_first=False)
 
-    dummyTail = _BFS_search_for_shoot(start, end, matrixMap, matrixMoveWeight,
-                                    matrixShootWeight,
-                                    block_types=block_types,
-                                    destroyable_types=destroyable_types,
-                                    x_axis_first=x_axis_first,
-                                    middle_first=False)
-    route = []
-    node = dummyTail
-    while True:
-        node = node[1]
-        if node is not None:
-            x, y      = node[0]
-            weight    = node[3]
-            BFSAction = node[4]
-            route.append( (x, y, weight, BFSAction) )
-        else:
-            break
-    route.reverse()
-    return route
+    yield from routes
 
 
-def get_route_length(route):
+def find_shortest_route_for_move(*args, **kwargs):
     """
-    计算路线长度
-
-    Input:
-        - route    [(x: int, y: int, weight: int, BFSAction: int)]   带权重值的路径，从 start -> end
-
-    Return:
-        - length   int   路线长度，如果是空路线，返回 无穷大长度
+    搜索移动到目标的最短路径
     """
-    if len(route) == 0:
-        return INFINITY_ROUTE_LENGTH
-    return np.sum( r[2] for r in route )
+    for route in find_all_routes_for_move(*args, **kwargs):
+        return route # 直接返回第一个 route
+
+
+def find_shortest_route_for_shoot(*args, **kwargs):
+    """
+    搜索移动并射击掉目标的最短路径
+    """
+    for route in find_all_routes_for_shoot(*args, **kwargs):
+        return route # 直接返回第一个 route
 
 
 def _get_route_length_by_node_chain(node):
     """
-    [DEBUG] 传入 node head ，计算其所代表的节点链对应的距离
+    [DEBUG] 传入 node chain head ，计算其所代表的节点链对应的距离
+
+    Return:
+        - length   int   路线长度，如果是空路线，返回 无穷大长度
+
     """
     assert isinstance(node, list) and len(node) == 5
-    dummyTail = [
-        (-1, -1),
+
+    dummyHead = [
+        NONE_POINT,
         node,
         -1,
         -1,
-        DUMMY_ACTION_ON_BFS,
+        DUMMY_ACTION,
         ]
+
     route = []
-    node = dummyTail
+    node = dummyHead
     while True:
         node = node[1]
         if node is not None:
@@ -624,7 +563,11 @@ def _get_route_length_by_node_chain(node):
             route.append( (x, y, weight) )
         else:
             break
-    return get_route_length(route)
+
+    if len(route) == 0:
+        return INFINITY_ROUTE_LENGTH
+
+    return np.sum( r[2] for r in route )
 
 
 #{ END }#

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-07 04:37:37
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-09 03:33:42
 """
 游戏团队类
 --------------------------------------------
@@ -145,7 +145,8 @@ class Tank2Team(Team):
             - back     int ( >= 1)  前第几回合的历史记录，例如 back = 1 表示前一回合
         """
         assert back >= 1, "back >= 1 is required"
-        return self._previousActions[player.side][player.id][-back]
+        debug_print(self._previousActions)
+        return self._previousActions[player.id][-back]
 
 
     def make_decision(self):
@@ -430,7 +431,7 @@ class Tank2Team(Team):
             if (Action.is_stay(action)
                 and player.has_status(Status.OVERLAP_WITH_ENEMY)  # 在等待敌人
                 and not player.has_status(Status.RELOADING)       # 确认一下有炮弹
-                and self.has_status_in_previous_turns(player, Status.OVERLAP_WITH_ENEMY, turns=3)
+                and self.has_status_in_previous_turns(player, Status.OVERLAP_WITH_ENEMY, turns=2)
                 ): # 数个回合里一直在等待
 
                 action3, signal3 = player.make_decision(Signal.SUGGEST_TO_BREAK_OVERLAP)

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 01:08:30
+# @Last Modified time: 2019-05-09 00:53:16
 """
 决策时的通用函数库
 
@@ -10,12 +10,10 @@
 
 __all__ = [
 
-    #"get_destroyed_fields",
-
-    "is_block_in_route",
-
     "fake_map_matrix_T_without_enemy",
     "fake_map_matrix_T_thinking_of_enemy_as_steel",
+
+    "get_manhattan_distance",
 
     ]
 
@@ -24,10 +22,9 @@ from ..global_ import np, deque
 from ..utils import debug_print, debug_pprint
 from ..action import Action
 from ..field import Field, EmptyField, SteelField, WaterField
-from .search import MOVE_ACTION_ON_BFS, SHOOT_ACTION_ON_BFS
 
 #{ BEGIN }#
-
+'''
 def is_block_in_route(field, route):
     """
     判断一个 Brick/Base/Tank (具体由寻找路线时的函数决定) 是否为相应路线上，为一个
@@ -44,6 +41,7 @@ def is_block_in_route(field, route):
             elif weight >= 1 and BFSAction == SHOOT_ACTION_ON_BFS: # 射击受阻
                 return True # 射击受阻，需要一个回合（及以上）（通常两回合，但是目标物可算作一回合）
     return False
+'''
 
 
 def fake_map_matrix_T_without_enemy(map, mySide):
@@ -76,5 +74,11 @@ def fake_map_matrix_T_thinking_of_enemy_as_steel(map, mySide):
             cMatrixMap[oppTank.xy] = Field.STEEL
     return cMatrixMap
 
+
+def get_manhattan_distance(x1, y1, x2, y2):
+    """
+    获得 (x1, y1) -> (x2, y2) 曼哈顿距离
+    """
+    return np.abs(x1 - x2) + np.abs(y1 - y2)
 
 #{ END }#

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 02:32:21
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-09 03:13:21
 """
 状况评估
 """
@@ -16,7 +16,6 @@ __all__ = [
     ]
 
 from ..utils import debug_print, simulator_print
-from .search import get_route_length
 from .status import Status
 
 #{ BEGIN }#
@@ -40,19 +39,34 @@ def assess_aggressive(battler, oppBattler):
     """
     myRoute = battler.get_shortest_attacking_route()
     oppRoute = oppBattler.get_shortest_attacking_route()
-    myRouteLen = get_route_length(myRoute)
-    oppRouteLen = get_route_length(oppRoute)
-    # debug_print(battler, "delta:", oppRouteLen - myRouteLen)
+    #
     # TODO:
     #   阈值不可定的太小，否则可能是错误估计，因为对方如果有防守，
     #   就有可能拖延步数。很有可能需要再动态决策一下，尝试往前预测几步，看看
     #   会不会受到阻碍，然后再下一个定论
     #
-    if oppRouteLen - myRouteLen >= 1: # TODO: 阈值多少合理？
-        return Status.AGGRESSIVE
-    elif myRouteLen - oppRouteLen > 2: # TODO: 尽量不要触发防御模式 ...
-        return Status.DEFENSIVE
-    else:
-        return Status.STALEMENT
+    assert not myRoute.is_not_found() and not oppRoute.is_not_found(), "route not found"
+
+    leadingLength = oppRoute.length - myRoute.length
+
+    # debug_print(battler, oppBattler, "leading:", leadingLength)
+
+    if battler.is_in_enemy_site(): # 在敌方半边地图，更倾向于不防御
+
+        if leadingLength >= 1:
+            return Status.AGGRESSIVE
+        elif leadingLength < -2:
+            return Status.DEFENSIVE
+        else:
+            return Status.STALEMENT
+
+    else: # 在我方半边地盘，会增加防御的可能性
+
+        if leadingLength >= 1:
+            return Status.AGGRESSIVE
+        elif leadingLength <= -1:
+            return Status.DEFENSIVE
+        else:
+            return Status.STALEMENT
 
 #{ END }#
