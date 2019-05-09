@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 01:06:39
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 13:17:45
 
 from typing import Iterable
+from contextlib import contextmanager
 
 class Tank(object):
 
@@ -78,6 +79,41 @@ class Route(object):
         #    yield xy
         yield from self._items
 
+counter = 0
+
+@contextmanager
+def auto_revert():
+    try:
+        yield
+        global counter
+        counter = 0
+        print("counter revert to %s" % counter)
+    except Exception as e:
+        raise e
+
+@contextmanager
+def inner_context():
+    try:
+        yield
+        print("inner_context")
+    except Exception as e:
+        raise e
+
+def rollback():
+    with auto_revert():
+        with auto_revert():
+            for _ in range(5):
+                global counter
+                counter += 1
+                print("current counter: %s" % counter)
+                with auto_revert():
+                    with inner_context():
+                        if counter == 2:
+                            return
+
+rollback()
+
+
 '''
 for _ in range(3):
     a = Tank("Blue 1")
@@ -97,7 +133,7 @@ print(d)
 #print(Signal.B)
 #print(Signal.C) # 未变 ！
 
-
+'''
 route = Route([ (1,2), (3,4), (4,5) ])
 
 print(isinstance(route, Iterable))
@@ -108,3 +144,4 @@ print(it)
 
 for node in route:
     print(node)
+    '''

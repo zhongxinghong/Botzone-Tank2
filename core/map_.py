@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 14:47:56
+# @Last Modified time: 2019-05-09 13:27:52
 """
 地图类
 """
@@ -15,7 +15,7 @@ __all__ = [
 
 from .const import DEBUG_MODE, COMPACT_MAP, SIDE_COUNT, TANKS_PER_SIDE, GAME_STATUS_NOT_OVER,\
                 GAME_STATUS_DRAW, GAME_STATUS_BLUE_WIN, GAME_STATUS_RED_WIN
-from .global_ import np, functools
+from .global_ import np, functools, contextmanager
 from .utils import CachedProperty, SingletonMeta, debug_print, simulator_print
 from .action import Action
 from .field import Field, EmptyField, BaseField, BrickField, SteelField, WaterField, TankField
@@ -79,6 +79,9 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         self._performedActionsRecord = {} # turn -> [[int, int], [int, int]] 记录 perform 所执行过的动作，用于 undo_revert
         self._init_bases()
         self._init_tanks()
+        # -----------------------
+        #self._revertStack = [] # [debug] 保存需要 revert 的行为
+        #self._revertIdx = 0 # [debug] 当前 revert 的编号
 
 
     def reset(self): # 重置整个地图
@@ -347,19 +350,37 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         #self.debug_print_out()
 
 
+    @contextmanager
     def simulate_one_action(self, tank, action):
         """
-        只执行其中一架 tank 的行为，其他 tank 均假设为不动
+        模拟一回合：
+            其中一架 tank 执行一个特定行为，其他 tank 均不动
+
+        模拟结束后，会自动回滚
 
         Input:
             - tank     TankField/BattleTank   能表明坐标的 tank 对象
             - action   int                    下回合的行动
+
         """
-        actions = [
-            [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
-        ]
-        actions[tank.side][tank.id] = action
-        self.perform(*actions)
+        try:
+            actions = [
+                [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
+            ]
+            actions[tank.side][tank.id] = action
+            self.perform(*actions)
+            #debug_print("simulate:", tank, action)
+            #self._revertIdx += 1
+            #self._revertStack.append( (self._revertIdx, tank, action) )
+
+            yield
+
+        except Exception as e:
+            raise e
+        finally:
+            self.revert() # 不管出于什么错误，模拟结束后必定回滚
+            #self._revertStack.pop()
+            #debug_print("revert:", tank, action)
 
     def revert(self):
         """
@@ -403,9 +424,25 @@ class Tank2Map(Map, metaclass=SingletonMeta):
 
         return True
 
+    @contextmanager
+    def rollback_to_previous(self):
+        """
+        回滚到先前回合
+
+        回滚结束后，会自动撤销回滚
+
+        """
+        try:
+            self.revert()
+            yield
+        except Exception as e:
+            raise e
+        finally:
+            self.undo_revert() # 回合结束后撤销回滚
+
     def undo_revert(self):
         """
-        主动撤销后，再将 revert 这个动作撤销
+        从当前回合主动回滚到之前回合后，再将 revert 这个动作撤销
         """
         nextTurn = self._turn + 1
         assert nextTurn in self._performedActionsRecord, "no previously revert operation found"

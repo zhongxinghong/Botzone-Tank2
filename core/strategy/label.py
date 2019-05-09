@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-04 02:24:15
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 02:26:29
+# @Last Modified time: 2019-05-09 18:16:29
 """
 标记类
 
@@ -24,6 +24,10 @@ from ..utils import UniqueIntEnumMeta
 class Label(object, metaclass=UniqueIntEnumMeta):
 
     __offset__ = 300
+
+    NONE = 0
+
+    BREAK_OVERLAP_SIMULTANEOUSLY = 1   # 会和我同时打破重叠
 
 
 #{ END }#

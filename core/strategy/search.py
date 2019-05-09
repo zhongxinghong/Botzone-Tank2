@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 06:01:46
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 17:38:29
 """
 BFS 搜索最短路径的工具库
 
@@ -381,6 +381,7 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
 
         if matrixCanShoot[x, y]:
             canShootNodeChains[(x, y)] = node  # 记录最短节点
+            continue  # 然后就不要继续找这个节点了！
 
         if DEBUG_MODE:
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
@@ -408,14 +409,13 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
                 MOVE_ACTION,
                 ])
 
-
-    #if start == (6, 0):
+    #if start == (5, 6):
     #    debug_print("distance matrix:\n", matrixDistance.T)
 
 
     ## 接下来对于每个节点，尝试通过射击的方式走完剩下的路程
 
-    _foundRoute = False
+    routes = []
 
     for xy, node in canShootNodeChains.items():
 
@@ -427,8 +427,7 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         while True:
 
             if (x3, y3) == end: # 到达目标
-                _foundRoute = True
-                yield Route(node)
+                routes.append( Route(node) )
                 break
 
             x3 += dx
@@ -444,7 +443,7 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
                 ]
 
 
-    #debug_print( [_get_route_length_by_node_chain(node) for node in reachTargetNodeChains] )
+    # debug_print( [_get_route_length_by_node_chain(node) for node in reachTargetNodeChains] )
 
     ## 找到最短的路径
 
@@ -452,9 +451,11 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         '''dummyTail[1] = min(reachTargetNodeChains, # 最短路径
                         key=lambda node: _get_route_length_by_node_chain(node))
         '''
-
-    if not _foundRoute:
+    if len(routes) == 0:
         yield Route()
+    else:
+        routes.sort(key=lambda route: route.length)
+        yield from routes
 
 
 def find_all_routes_for_move(start, end, matrix_T,

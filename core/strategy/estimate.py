@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 03:13:21
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 14:54:48
 """
 状况评估
 """
@@ -10,18 +10,16 @@
 __all__ = [
 
     "assess_aggressive",
-
-    "MINIMAL_TURNS_FOR_ACTIVE_DEFENSIVE_DECISION"
+    "assess_route_similarity",
 
     ]
 
+from ..global_ import np
 from ..utils import debug_print, simulator_print
+from .utils import get_manhattan_distance
 from .status import Status
 
 #{ BEGIN }#
-
-MINIMAL_TURNS_FOR_ACTIVE_DEFENSIVE_DECISION = 2
-
 
 def assess_aggressive(battler, oppBattler):
     """
@@ -68,5 +66,41 @@ def assess_aggressive(battler, oppBattler):
             return Status.DEFENSIVE
         else:
             return Status.STALEMENT
+
+
+def assess_route_similarity(route1, route2):
+    """
+    评估两条路线的相似度
+    一般用于判断选择某条路线是否可以和敌人相遇
+
+    实现思路：
+    --------------
+    首先找出两者中最短的一条路径，对于其上每一个点，在另一条路上寻找与之距离最短（曼哈顿距离即可）
+    的点，并将这两个点之间的距离作为总距离的一个部分，每个分距离和相应点的权重的加权平均值即为总距离
+
+    最后的估值为 总距离除以最短路线的坐标点数的均值 的倒数
+    值越接近 1 表示越相近，值越接近 0 表示越不相近
+
+    根据实际情景的需要，我们将较长路劲多出来的那些点忽略 ...
+
+
+    TODO:
+    -------------
+    1. 如何考虑坐标权重
+    2. 如何考虑长路径中多出来的那些点
+
+    """
+    route1 = [ (node.x, node.y, node.weight) for node in route1 ]
+    route2 = [ (node.x, node.y, node.weight) for node in route2 ]
+
+    if len(route1) > len(route2): # 确保 route1 坐标数不超过 route2
+        route1, route2 = route2, route1
+
+    total = 0
+    for x1, y1, weight in route1:
+        d = np.min([ get_manhattan_distance(x1, y1, x2, y2) for x2, y2, _ in route2 ])
+        total += d * weight
+
+    return 1 / ( total / len(route1) + 1 )
 
 #{ END }#

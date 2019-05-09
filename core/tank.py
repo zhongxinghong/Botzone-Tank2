@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 06:13:40
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 19:03:29
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -134,6 +134,34 @@ class BattleTank(object):
                     continue
         return points
 
+    def get_all_valid_move_action(self):
+        """
+        所有合法的移动行为
+        """
+        tank = self._tank
+        map_ = self._map
+        actions = []
+        x1, y1 = tank.xy
+        for x2, y2 in self.get_surrounding_empty_field_points():
+            moveAction = Action.get_move_action(x1, y1, x2, y2)
+            map_.is_valid_move_action(tank, moveAction)
+            actions.append(moveAction)
+        return actions
+
+    def get_all_valid_shoot_action(self):
+        """
+        获得所有合法的射击行为
+        """
+        if self.canShoot:
+            return list(Action.SHOOT_ACTIONS)
+        else:
+            return []
+
+    def get_all_valid_actions(self):
+        """
+        获得所有合法的行为
+        """
+        return self.get_all_valid_move_action() + self.get_all_valid_shoot_action() + [ Action.STAY ]
 
     def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0):
         """
@@ -512,14 +540,22 @@ class BattleTank(object):
 
         Return:
             - actions    [int]    能够闪避开的行为值，可能为空
+
         """
         tank = self._tank
         map_ = self._map
-        oppBase = map_.bases[1 - tank.side]
+        side = tank.side
+        oppSide = 1 - side
+        base = map_.bases[side]
+        oppBase = map_.bases[oppSide]
         x1, y1 = tank.xy
         x2, y2 = oppTank.xy
+        if self.is_in_our_site():
+            x3, y3 = base.xy     # 在本方地盘，优先朝自己基地的方向闪现
+        else:
+            x3, y3 = oppBase.xy  # 在对方地盘，优先朝着对方基地的方向闪现
         actions = []
-        for dx, dy in get_searching_directions(x1, y1, oppBase.x, oppBase.y): # 优先逃跑向对方基地
+        for dx, dy in get_searching_directions(x1, y1, x3, y3, middle_first=True): # 优先逃跑向对方基地
             x3 = x1 + dx
             y3 = y1 + dy
             if x3 == x2 or y3 == y2: # 逃跑方向不对
@@ -565,11 +601,18 @@ class BattleTank(object):
         """
         tank = self._tank
         map_ = self._map
-        oppBase = map_.bases[1 - tank.side]
+        side = tank.side
+        oppSide = 1 - side
+        base = map_.bases[side]
+        oppBase = map_.bases[oppSide]
         x1, y1 = tank.xy
         x2, y2 = oppTank.xy
+        if self.is_in_our_site(): # 选择性同 try_dodge
+            x3, y3 = base.xy
+        else:
+            x3, y3 = oppBase.xy
         actions = []
-        for dx, dy in get_searching_directions(x1, y1, oppBase.x, oppBase.y):
+        for dx, dy in get_searching_directions(x1, y1, x3, y3, middle_first=True):
             # 按照惯例，优先凿开移向对方基地的墙
             x3 = x1 + dx
             y3 = y1 + dy
@@ -692,9 +735,10 @@ class BattleTank(object):
 
     def get_enemy_behind_brick(self, action, interval=0):
         """
-        返回相应行为的方向后的围墙后的敌人
+        返回行为对应的方向后的围墙后的敌人
 
-        仅仅对应于 坦克|土墙|坦克  的相邻情况
+        乙方坦克和围墙间可以有任意空位
+        围墙到敌方坦克间至多有 interval 个空位
 
         Input:
             - action     int   移动/射击行为，确定方向
@@ -713,21 +757,25 @@ class BattleTank(object):
         dx, dy = Action.DIRECTION_OF_ACTION_XY[action % 4]
 
         # 检查前方是否是墙
-        x2 = x1 + dx
-        y2 = y1 + dy
-        if not map_.in_map(x2, y2):
-            return None
-        fields = map_[x2, y2]
-        if len(fields) == 0:
-            return None
-        elif len(fields) > 1:
-            return None
-        else:
-            field = fields[0]
-            if isinstance(field, BrickField):
-                pass
-            else:
+        x2, y2 = x1, y1
+        while True:
+            x2 += dx
+            y2 += dy
+            if not map_.in_map(x2, y2):
                 return None
+            fields = map_[x2, y2]
+            if len(fields) == 0:
+                continue
+            elif len(fields) > 1:
+                return None
+            else:
+                field = fields[0]
+                if isinstance(field, BrickField):
+                    break # 此时 x2, y2 位置上是一个 Brick
+                elif isinstance(field, (WaterField, EmptyField) ):
+                    continue
+                else:
+                    return None
 
         # 检查前方是否有敌方坦克
         x3, y3 = x2, y2
@@ -763,12 +811,18 @@ class BattleTank(object):
         return self.get_enemy_behind_brick(action) is not None
 
 
-    def get_nearest_enemy(self, block_teammate=False):
+    def get_nearest_enemy(self, block_teammate=False, isolate=False):
         """
         获得最近的敌人，移动距离
 
+        Input:
+            - isolate   bool    是否只考虑离自己最近，而不从团队整体考虑
+                                如果联系整个团队，那么离自己最近的敌人定义为与我之间间隔的步数
+                                和与我的队友之间间隔的步数差最小的敌人
+
         Return:
             - enemy   TankField
+
         """
         tank = self._tank
         map_ = self._map
@@ -780,6 +834,41 @@ class BattleTank(object):
             return None
         if len(enemies) < 2:
             return enemies[0]
+
+        # TODO:
+        #   两种情况的决策顺序是有差别的，一个是见到走不通就 block_teammate = False 另一个是如果全部都走不通
+        #   就全部 block_teammate = False ，这可能会引发问题？
+        if not isolate:
+            #
+            # 注：这是一个糟糕的设计，因为 BattleTank 对象最初被设计为只懂得单人决策的对象
+            # 他不应该知道队友的行为，但是此处打破了这个规则
+            #
+            teammateBattler = BattleTank( map_.tanks[tank.side][ 1 - tank.id ] )
+            if teammateBattler.destroyed:
+                pass
+            else:
+                deltaLengthWithEnemyList = []
+                for enemy in enemies:
+                    route1 = self.get_route_to_enemy_by_movement(enemy)
+                    if route1.is_not_found():
+                        route1 = self.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+                        if route1.is_not_found(): # 我无法到达敌人的位置？？？
+                            continue
+                    route2 = teammateBattler.get_route_to_enemy_by_movement(enemy)
+                    if route2.is_not_found():
+                        route2 = teammateBattler.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+
+                    if route2.is_not_found():
+                        deltaLength = route1.length # 这样做是否合理？
+                    else:
+                        deltaLength = route1.length - route2.length
+                    deltaLengthWithEnemyList.append( (deltaLength, enemy) )
+                    idx = deltaLengthWithEnemyList.index(
+                                    min(deltaLengthWithEnemyList, key=lambda tup: tup[0]) )
+                    return deltaLengthWithEnemyList[idx][1]
+
+
+        # 否则为单人决策
 
         routes = [ self.get_route_to_enemy_by_movement(enemy) for enemy in enemies ]
 

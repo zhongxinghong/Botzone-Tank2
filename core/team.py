@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 03:33:42
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 18:55:57
 """
 游戏团队类
 --------------------------------------------
@@ -76,9 +76,12 @@ class Tank2Team(Team):
         """
         if memory is None:
             memory = {
-                "status":  [] # [ set(), set() ] 每轮的状态
+                "status": [], # [ set(), set() ] 每轮的状态
+                "labels": [ set(), set() ], # [ set(), set() ] 已有的标记
                 }
         self._memory = memory
+        self._player1.add_labels(*memory["labels"][0])
+        self._player2.add_labels(*memory["labels"][1])
 
 
     def dump_memory(self):
@@ -87,6 +90,10 @@ class Tank2Team(Team):
                 self._player1.get_status(),
                 self._player2.get_status(),
                 ])
+        memory["labels"] = [
+                self._player1.get_labels(),
+                self._player2.get_labels(),
+                ]
         return memory
 
     def get_memory(self):
@@ -145,7 +152,6 @@ class Tank2Team(Team):
             - back     int ( >= 1)  前第几回合的历史记录，例如 back = 1 表示前一回合
         """
         assert back >= 1, "back >= 1 is required"
-        debug_print(self._previousActions)
         return self._previousActions[player.id][-back]
 
 
@@ -377,16 +383,15 @@ class Tank2Team(Team):
                         and teammate.has_status(Status.KEEP_ON_MARCHING) # 队友正在行军
                         ):
                         # 尝试模拟下一回合的队友状态，并让队友重新决策，查看他的状态
-                        map_.simulate_one_action(teammate, teammateAction)
-                        action4, _ = teammate.make_decision()
-                        if (teammate.has_status(Status.WAIT_FOR_MARCHING)
-                            and teammate.has_status(Status.PREVENT_BEING_KILLED)
-                            ): # 这个时候队友被阻拦
-                            teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
-                            playerRiskyEnemyBattler = player.get_risky_enemy_battler()
-                            if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
-                                shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙
-                        map_.revert()
+                        with map_.simulate_one_action(teammate, teammateAction):
+                            action4, _ = teammate.make_decision()
+                            if (teammate.has_status(Status.WAIT_FOR_MARCHING)
+                                and teammate.has_status(Status.PREVENT_BEING_KILLED)
+                                ): # 这个时候队友被阻拦
+                                teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
+                                playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                                if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
+                                    shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙
 
 
                 if shouldBreakBrick:
@@ -412,7 +417,6 @@ class Tank2Team(Team):
                 if signal3 == Signal.READY_TO_BREAK_BRICK: # 可以破墙，则选择破墙
                     returnActions[idx] = action3
                     hasTeamActions[idx] = True
-
 
 
 

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 05:43:23
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-09 16:04:14
 """
 工具类
 """
@@ -47,16 +47,20 @@ else:
     simulator_pprint = _null_func
 
 
+class _GotoOuterException(Exception):
+    pass
+
 @contextmanager
 def outer_label():
     """
-    用于直接打断外层循环
+    用于直接打断外层循环，或者继续外层循环
+
+    如果置于循环体之外，就是 break outer
+    如果置于循环体之内，就是 continue outer
     """
-    class OuterBreakException(Exception):
-        pass
     try:
-        yield OuterBreakException
-    except OuterBreakException:
+        yield _GotoOuterException
+    except _GotoOuterException:
         pass
 
 
