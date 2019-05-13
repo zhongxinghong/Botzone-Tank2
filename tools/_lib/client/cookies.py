@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 01:58:58
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 01:51:12
+# @Last Modified time: 2019-05-14 04:35:22
 
 __all__ = [
 
@@ -39,16 +39,13 @@ class CookiesManagerMixin(object):
         try:
             cookies = json_load(self._cookies_file)
         except (FileNotFoundError, json.JSONDecodeError):
-            cookies = RequestsCookieJar()
+            jar = RequestsCookieJar()
         else:
-            if cookies is None:
-                cookies = RequestsCookieJar()
-            else:
-                cookies = RequestsCookieJar()
-                for k, v in cookies.items():
-                    cookies.set(k, v)
+            jar = RequestsCookieJar()
+            for k, v in cookies.items():
+                jar.set(k, v)
         finally:
-            self._session.cookies = cookies
+            self._session.cookies = jar
 
     def clear_cookies(self):
         self._session.cookies.clear()

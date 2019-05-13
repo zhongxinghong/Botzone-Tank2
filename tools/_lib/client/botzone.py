@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 02:23:29
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 02:22:50
+# @Last Modified time: 2019-05-14 04:45:05
 
 __all__ = [
 
@@ -49,14 +49,17 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
         _logger.info("Email: %s" % email)
         _logger.info("login ...")
 
-        r = self._post(BOTZONE_URL_LOGIN,
+        r = self._post(
+                BOTZONE_URL_LOGIN,
                 data={
                     "email": email,
                     "password": password,
-                }, headers={
+                },
+                headers={
                     "Referer": BOTZONE_URL_HOST,
-                }, hooks=get_hooks(hook_check_status_code,
-                                   hook_botzone_check_success_field),
+                },
+                hooks=get_hooks(hook_check_status_code,
+                                hook_botzone_check_success_field),
             )
 
         _logger.info("login successfully")
@@ -75,7 +78,10 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
         """
         _logger.info("get mybots ...")
 
-        r = self._get(BOTZONE_URL_MYBOTS)
+        r = self._get(
+                BOTZONE_URL_MYBOTS,
+                hooks=get_hooks(hook_check_status_code),
+            )
 
         _logger.info("get mybots successfully")
         #self._save_content(r, "mybots.html")
@@ -90,12 +96,16 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
         _logger.info("BotID: %s" % botID)
         _logger.info("get bot detail ...")
 
-        r = self._get(BOTZONE_URL_BOT_DETAIL.format(botID=botID),
+        r = self._get(
+                BOTZONE_URL_BOT_DETAIL.format(botID=botID),
                 params={
                     "_": int( time.time() * 1000 ),
-                }, headers={
+                },
+                headers={
                     "Referer": BOTZONE_URL_MYBOTS,
-                })
+                },
+                hooks=get_hooks(hook_check_status_code),
+            )
 
         _logger.info("get bot detail successfully")
         #self._save_content(r, "bot_detail_%s.json" % botID)
@@ -109,12 +119,17 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
         _logger.info("GameID: %s" % gameID)
         if startID != "":
             _logger.info("StartID: %s" % startID)
+        _logger.info("get global match list ...")
 
-        r = self._get(BOTZONE_URL_GLOBAL_MATCH_LIST,
+        r = self._get(
+                BOTZONE_URL_GLOBAL_MATCH_LIST,
                 params={
                     "startid": startID,
                     "game": gameID,
-                })
+                },
+                hooks=get_hooks(hook_check_status_code),
+            )
+
         _logger.info("get global match list successfully")
-        self._save_content(r, "global_match_list.html")
+        #self._save_content(r, "global_match_list.html")
         return r
