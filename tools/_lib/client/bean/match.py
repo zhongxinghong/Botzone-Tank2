@@ -2,21 +2,22 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-05 16:54:33
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-05 20:01:18
+# @Last Modified time: 2019-05-14 04:16:46
 
 __all__ = [
 
-    "MatchBean",
+    "RankMatchBean",
+    "GlobalMatchBean",
 
     ]
 
 from ...utils import CachedProperty
 from ..const import BOTZONE_URL_MATCH
-from ..utils import parse_utc_timestamp
-from .player import BotPlayerBean
+from ..utils import parse_timestamp, parse_utc_timestamp
+from .player import RankBotPlayerBean, GlobalMatchPlayerBean
 
 
-class MatchBean(object):
+class RankMatchBean(object):
 
     def __init__(self, json):
         self._json = json
@@ -40,7 +41,7 @@ class MatchBean(object):
 
     @CachedProperty
     def players(self):
-        return [ BotPlayerBean(player) for player in self._json["players"] ]
+        return [ RankBotPlayerBean(player) for player in self._json["players"] ]
 
     @CachedProperty
     def url(self):
@@ -121,3 +122,55 @@ JSON sample:
     }
 }
 '''
+
+
+class GlobalMatchBean(object):
+
+    def __init__(self, tree):
+        self._tree = tree  # lxml.etree._Element  from etree.HTML(r.content)
+
+    @CachedProperty
+    def id(self):
+        return self._tree.xpath('./td[5]/a/@href')[0].split("/")[-1]
+
+    @CachedProperty
+    def time(self):
+        _timestamp = self._tree.find('./td[1]').text
+        return parse_timestamp(_timestamp).timestamp()
+
+    @CachedProperty
+    def game(self):
+        return self._tree.find('./td[2]/a').text
+
+    @CachedProperty
+    def scores(self):
+        return [ player.score for player in self.players ]
+
+    @CachedProperty
+    def players(self):
+        _divs = self._tree.xpath('./td[4]/div[contains(@class, "matchresult")]')
+        return [ GlobalMatchPlayerBean(div) for div in _divs ]
+
+    @CachedProperty
+    def url(self):
+        return BOTZONE_URL_MATCH.format(matchID=self.id)
+
+
+    def __repr__(self):
+        _players = [ (player.botName, player.userName) if player.isBot else player.userName
+                        for player in self.players ]
+        return "Match(%s, %d, %d, %s, %s)" % (
+                self.game, self.scores[0], self.scores[1],
+                _players[0], _players[1])
+
+    @CachedProperty
+    def dict(self):
+        return {
+            "id": self.id,
+            "game": self.game,
+            "time": self.time,
+            "scores": self.scores,
+            "players": [ (player.botName if player.isBot else None, player.userName)
+                            for player in self.players ],
+            "url": self.url,
+            }

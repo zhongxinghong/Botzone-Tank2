@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-28 02:23:29
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 18:33:42
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-14 02:22:50
 
 __all__ = [
 
@@ -13,7 +13,8 @@ __all__ = [
 import os
 import time
 from .const import USER_AGENT
-from .const import BOTZONE_URL_HOST, BOTZONE_URL_LOGIN, BOTZONE_URL_MYBOTS, BOTZONE_URL_BOT_DETAIL
+from .const import BOTZONE_URL_HOST, BOTZONE_URL_LOGIN, BOTZONE_URL_MYBOTS, BOTZONE_URL_BOT_DETAIL,\
+                    BOTZONE_URL_GLOBAL_MATCH_LIST
 from .base import BaseClient
 from .cookies import CookiesManagerMixin
 from .hooks import get_hooks, hook_check_status_code, hook_botzone_check_success_field
@@ -34,8 +35,9 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
 
     def __init__(self):
         BaseClient.__init__(self)
+
         CookiesManagerMixin.__init__(self)
-        self._session.cookies = self._load_cookies() # 创建时自动导入本地 cookies
+        self._load_cookies() # 创建时自动导入本地 cookies 缓存
         _logger.info("load cookies")
 
 
@@ -97,4 +99,22 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
 
         _logger.info("get bot detail successfully")
         #self._save_content(r, "bot_detail_%s.json" % botID)
+        return r
+
+    def get_global_match_list(self, gameID, startID=""):
+        """
+        获取全局的比赛记录
+
+        """
+        _logger.info("GameID: %s" % gameID)
+        if startID != "":
+            _logger.info("StartID: %s" % startID)
+
+        r = self._get(BOTZONE_URL_GLOBAL_MATCH_LIST,
+                params={
+                    "startid": startID,
+                    "game": gameID,
+                })
+        _logger.info("get global match list successfully")
+        self._save_content(r, "global_match_list.html")
         return r

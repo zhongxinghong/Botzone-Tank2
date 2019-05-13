@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-05 16:21:07
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 17:17:24
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-14 04:14:19
 
 __all__ = [
 
-    "BotBean"
+    "RankBotBean"
 
     ]
 
@@ -16,11 +16,11 @@ from ...utils import CachedProperty
 _regexScore = re.compile(r'\d+(?:\.\d+)?')
 
 
-class BotBean(object):
+class RankBotBean(object):
 
     def __init__(self, tree, game):
-        self._tree = tree  # lxml.etree._Element  from GameBean
-        self._game = game  # GameBean
+        self._tree = tree  # lxml.etree._Element  from RankGameBean
+        self._game = game  # RankGameBean
 
     @property
     def game(self):
@@ -32,20 +32,20 @@ class BotBean(object):
 
     @CachedProperty
     def name(self):
-        return self._tree.xpath('.//*[@class="list-group-item-heading"]/text()')[0]
+        return self._tree.xpath('.//*[@class="list-group-item-heading"]')[0].text
 
     @CachedProperty
     def version(self):
-        _version = self._tree.xpath('.//*[contains(@class, "botversion")]/span/text()')[0]
+        _version = self._tree.xpath('.//*[contains(@class, "botversion")]/span')[0].text
         return int(_version)
 
     @CachedProperty
     def description(self):
-        return self._tree.xpath('.//*[contains(@class, "botdesc")]/text()')[0]
+        return self._tree.xpath('.//*[contains(@class, "botdesc")]')[0].text
 
     @CachedProperty
     def score(self):
-        _botScoreText = self._tree.xpath('.//*[contains(@class, "rankscore")]/text()')[0]
+        _botScoreText = self._tree.xpath('.//*[contains(@class, "rankscore")]')[0].text
         _botScore = _regexScore.search(_botScoreText).group()
         return float(_botScore)
 

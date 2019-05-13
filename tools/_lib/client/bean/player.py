@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 # @Author: zhongxinghong
 # @Date:   2019-05-05 17:02:55
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 17:28:59
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-14 04:22:20
 
 __all__ = [
 
-    "BotPlayerBean",
+    "RankBotPlayerBean",
+    "GlobalMatchPlayerBean",
 
     ]
 
+import re
 from ...utils import CachedProperty
 
+_regexBotIDFromFavorite = re.compile(r'AddFavoriteBot\(this,\s*\'(\S+?)\',\s*(?:\d+)\)')
 
-class BotPlayerBean(object):
+
+class RankBotPlayerBean(object):
 
     def __init__(self, json):
         self._json = json
@@ -70,3 +74,55 @@ class BotPlayerBean(object):
     }
 }
 '''
+
+class GlobalMatchPlayerBean(object):
+
+    def __init__(self, tree):
+        self._tree = tree
+
+    @CachedProperty
+    def userID(self):
+        _href = self._tree.xpath('./a[@class="username" or @class="smallusername"]/@href')[0]
+        return _href.split("/")[-1]
+
+    @CachedProperty
+    def userName(self):
+        return self._tree.xpath('./a[@class="username" or @class="smallusername"]')[0].text
+
+    @CachedProperty
+    def score(self):
+        _score = self._tree.find('./div[1]').text
+        return int(_score)
+
+    @CachedProperty
+    def isBot(self):
+        return "botblock" in self._tree.attrib["class"]
+
+    @CachedProperty
+    def botName(self):
+        self._raise_if_not_a_bot()
+        return self._tree.xpath('./a[contains(@class, "botname")]')[0].text.strip()
+
+    @CachedProperty
+    def botID(self):
+        self._raise_if_not_a_bot()
+        _onclick = self._tree.xpath('./a[contains(@class, "favorite")]/@onclick')[0]
+        return _regexBotIDFromFavorite.match(_onclick).group(1)
+
+    @CachedProperty
+    def botVersion(self):
+        self._raise_if_not_a_bot()
+        _version = self._tree.xpath('./a[contains(@class, "botname")]/span[@class="version"]')[0].text
+        return int(_version)
+
+    def _raise_if_not_a_bot(self):
+        if not self.isBot:
+            raise Exception("I'm not a bot player")
+
+    def __repr__(self):
+        if not self.isBot:
+            return "HumanPlayer(%s, %d)" % (
+                    self.userName, self.score)
+        else:
+            return "BotPlayer(%s, %d, %s, %d)" % (
+                    self.userName, self.score, self.botName, self.botVersion)

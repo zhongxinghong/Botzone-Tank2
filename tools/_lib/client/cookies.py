@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 01:58:58
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-04-28 02:22:26
+# @Last Modified time: 2019-05-14 01:51:12
 
 __all__ = [
 
@@ -12,7 +12,7 @@ __all__ = [
 
 import os
 from requests.cookies import RequestsCookieJar
-from ..utils import json_load, json_dump
+from ..utils import json, json_load, json_dump
 from ..const import CACHE_DIR
 
 
@@ -36,14 +36,19 @@ class CookiesManagerMixin(object):
         json_dump(self._session.cookies.get_dict(), self._cookies_file)
 
     def _load_cookies(self):
-        cookies = json_load(self._cookies_file)
-        if cookies is None:
-            return RequestsCookieJar()
+        try:
+            cookies = json_load(self._cookies_file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            cookies = RequestsCookieJar()
         else:
-            jar = RequestsCookieJar()
-            for k, v in cookies.items():
-                jar.set(k, v)
-            return jar
+            if cookies is None:
+                cookies = RequestsCookieJar()
+            else:
+                cookies = RequestsCookieJar()
+                for k, v in cookies.items():
+                    cookies.set(k, v)
+        finally:
+            self._session.cookies = cookies
 
-    def clean_cookies(self):
+    def clear_cookies(self):
         self._session.cookies.clear()

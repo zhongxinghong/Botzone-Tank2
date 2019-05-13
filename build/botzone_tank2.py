@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @author:      Rabbit
 # @filename:    botzone_tank2.py
-# @date:        2019-05-09 19:14:56
+# @date:        2019-05-10 16:18:22
 # @site:        https://github.com/zhongxinghong/Botzone-Tank2
 # @description: Automatically built Python single-file script for Botzone/Tank2 game
 """
@@ -2188,6 +2188,9 @@ class BattleTank(object):
                 if route.length - minLength > delay:
                     break
                 yield route
+            else: # 否则就是 [ Route() ] 表示没有找到路径
+                yield route
+                break
 
 
     def get_shortest_attacking_route(self, *args, **kwargs):

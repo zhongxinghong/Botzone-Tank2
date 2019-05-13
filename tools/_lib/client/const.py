@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-05 14:43:52
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 17:09:45
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-14 02:02:29
 
 __all__ = [
 
@@ -14,6 +14,7 @@ __all__ = [
     "BOTZONE_URL_MYBOTS",
     "BOTZONE_URL_BOT_DETAIL"
     "BOTZONE_URL_MATCH",
+    "BOTZONE_URL_GLOBAL_MATCH_LIST",
 
     ]
 
@@ -25,8 +26,9 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML
 
 BOTZONE_USER_JSON_FILE = abs_path("./config/botzone_user.json")
 
-BOTZONE_URL_HOST       = "https://botzone.org.cn"
-BOTZONE_URL_LOGIN      = "https://botzone.org.cn/login"
-BOTZONE_URL_MYBOTS     = "https://botzone.org.cn/mybots"
-BOTZONE_URL_BOT_DETAIL = "https://botzone.org.cn/mybots/detail/{botID}"
-BOTZONE_URL_MATCH      = "https://botzone.org.cn/match/{matchID}"
+BOTZONE_URL_HOST              = "https://botzone.org.cn"
+BOTZONE_URL_LOGIN             = "https://botzone.org.cn/login"
+BOTZONE_URL_MYBOTS            = "https://botzone.org.cn/mybots"
+BOTZONE_URL_BOT_DETAIL        = "https://botzone.org.cn/mybots/detail/{botID}"
+BOTZONE_URL_MATCH             = "https://botzone.org.cn/match/{matchID}"
+BOTZONE_URL_GLOBAL_MATCH_LIST = "https://botzone.org.cn/globalmatchlist"

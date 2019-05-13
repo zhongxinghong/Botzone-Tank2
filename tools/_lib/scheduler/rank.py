@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:42:58
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-05 19:45:15
+# @Last Modified time: 2019-05-14 02:48:31
 
 __all__ = [
 
@@ -14,7 +14,7 @@ __all__ = [
 import os
 from ..client.botzone import BotzoneClient
 from ..client.const import BOTZONE_USER_JSON_FILE
-from ..client.bean import MatchBean
+from ..client.bean import RankMatchBean
 from ..utils import json_load, json_dump
 from ..log import ConsoleLogger
 from .const import CONFIG_JSON_FILE, RANK_MATCHES_DATA_DIR
@@ -53,7 +53,7 @@ def task_download_rank_matches():
 
     respJson = r.json()
 
-    matches = [ MatchBean(match) for match in respJson["bot"]["rank_matches"] ]
+    matches = [ RankMatchBean(match) for match in respJson["bot"]["rank_matches"] ]
     counter = 0
     for match in matches:
         file = os.path.join(RANK_MATCHES_DATA_DIR, "%s.json" % match.id)

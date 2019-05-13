@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-05 14:56:48
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 17:34:15
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-14 03:30:16
 
 import sys
 sys.path.append("../")
@@ -13,22 +13,27 @@ from requests.compat import json
 from pprint import pprint
 from lxml import etree
 from tools._lib.client.botzone import BotzoneClient
-from tools._lib.client.bean import BotBean, GameBean, MatchBean, BotPlayerBean
+from tools._lib.client.bean import RankBotBean, RankGameBean, RankMatchBean, RankBotPlayerBean,\
+                                GlobalMatchBean, GlobalMatchPlayerBean
 from tools._lib.const import CACHE_DIR
 
 client = BotzoneClient()
 
 #client.login()
 #r = client.get_mybots()
+#client.get_global_match_list(gameID="5c908e0e7857b210f901be7d")
 
 reScore = re.compile(r'\d+(?:\.\d+)?')
+reBotIDFromFavorite = re.compile(r'AddFavoriteBot\(this,\s*\'(\S+?)\',\s*(?:\d+)\)')
+
 
 with open(os.path.join(CACHE_DIR, "mybots.html"), "rb") as fp:
     content = fp.read()
 
+
 tree = etree.HTML(content)
 
-games = [GameBean(gameTree) for gameTree
+games = [RankGameBean(gameTree) for gameTree
             in tree.xpath('.//div[@id="games"]/div[not(contains(@style, "display: none"))]')]
 
 '''
@@ -67,7 +72,7 @@ with open(os.path.join(CACHE_DIR, "bot_detail_5cc70d6275e55951524caa17.json"), "
     botDetailJSON = json.load(fp)
 
 
-matches = [MatchBean(match) for match in botDetailJSON["bot"]["rank_matches"]]
+matches = [RankMatchBean(match) for match in botDetailJSON["bot"]["rank_matches"]]
 
 pprint(matches)
 
@@ -75,7 +80,52 @@ match = matches[0]
 
 print(match.dict)
 
+with open(os.path.join(CACHE_DIR, "global_match_list.html"), "rb") as fp:
+    content = fp.read()
 
-#print(r.content)
+tree = etree.HTML(content)
+trs = tree.xpath('//body/div[@class="container"]//table//tr[position()>1]')
 
+'''
+for tr in trs:
+
+    matchTime = tr.xpath('./td[1]/text()')[0]
+    gameName  = tr.xpath('./td[2]/a/text()')[0]
+    matchID   = tr.xpath('./td[5]/a/@href')[0].split("/")[-1]
+    players   = tr.xpath('./td[4]/div[contains(@class, "matchresult")]')
+
+
+    print(matchTime)
+    print(gameName)
+    print(matchID)
+
+    for _div in players:
+
+        userName = _div.xpath('./a[@class="username" or @class="smallusername"]/text()')[0]
+        userID = _div.xpath('./a[@class="username" or @class="smallusername"]/@href')[0].split("/")[-1]
+        score = int(_div.xpath('./div[1]/text()')[0])
+
+        isBot = "botblock" in _div.attrib["class"]
+
+        print(userName)
+        print(userID)
+        print(score)
+        print(isBot)
+
+        if isBot:
+            _a = _div.xpath('./a[contains(@class, "botname")]')[0]
+            botName = _a.text.strip()
+            botID = reBotIDFromFavorite.match(_div.xpath('./a[contains(@class, "favorite")]/@onclick')[0]).group(1)
+            botVersion = int(_a.xpath('./span[@class="version"]/text()')[0])
+            print(botName)
+            print(botID)
+            print(botVersion)
+
+'''
+
+for match in [ GlobalMatchBean(tr) for tr in trs ]:
+    print(match)
+    print(match.dict)
+    for player in match.players:
+        print(player)
 

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 19:03:29
+# @Last Modified time: 2019-05-10 16:17:28
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -217,6 +217,9 @@ class BattleTank(object):
                 if route.length - minLength > delay:
                     break
                 yield route
+            else: # 否则就是 [ Route() ] 表示没有找到路径
+                yield route
+                break
 
 
     def get_shortest_attacking_route(self, *args, **kwargs):

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 13:17:45
+# @Last Modified time: 2019-05-14 03:32:53
 
 from typing import Iterable
 from contextlib import contextmanager
@@ -111,7 +111,7 @@ def rollback():
                         if counter == 2:
                             return
 
-rollback()
+#rollback()
 
 
 '''
@@ -145,3 +145,31 @@ print(it)
 for node in route:
     print(node)
     '''
+
+
+class Singleton(type):
+    """
+    Singleton Metaclass
+    @link https://github.com/jhao104/proxy_pool/blob/428359c8dada998481f038dbdc8d3923e5850c0e/Util/utilClass.py
+    """
+    _inst = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._inst:
+            cls._inst[cls] = super(Singleton, cls).__call__(*args)
+        return cls._inst[cls]
+
+
+class A(object, metaclass=Singleton):
+
+    def __init__(self):
+        print("A.__init__")
+
+
+a = A()
+b = A()
+c = A()
+d = A()
+print(a is b)
+print(b is c)
+print(c is d)
