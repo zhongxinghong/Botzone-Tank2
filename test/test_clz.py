@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 03:32:53
+# @Last Modified time: 2019-05-15 02:51:38
 
 from typing import Iterable
 from contextlib import contextmanager
@@ -173,3 +173,29 @@ d = A()
 print(a is b)
 print(b is c)
 print(c is d)
+
+
+
+class First(object):
+
+    def get_second(self):
+        b = None
+        if isinstance(b, Second):
+            pass
+        return Second()
+
+
+class Second(object):
+
+    def get_first(self):
+        a = None
+        if isinstance(a, First):
+            pass
+        return First()
+
+
+a = First()
+b = Second()
+c = a.get_second()
+d = b.get_first()
+print("ok")

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @author:      Rabbit
 # @filename:    botzone_tank2.py
-# @date:        2019-05-10 16:18:22
+# @date:        2019-05-15 18:56:00
 # @site:        https://github.com/zhongxinghong/Botzone-Tank2
 # @description: Automatically built Python single-file script for Botzone/Tank2 game
 """
@@ -222,9 +222,6 @@ class DataSerializer(object):
 #{ BEGIN 'action.py' }#
 
 class Action(object):
-
-    # 推迟决策
-    POSTPONE    = -4 # 用于告知 Team 让队友优先决策
 
     # 空与无效
     DUMMY       = -3 # 额外添加的
@@ -1909,9 +1906,9 @@ def _get_route_length_by_node_chain(node):
 
 
 
-#{ BEGIN 'strategy/estimate.py' }#
+#{ BEGIN 'strategy/evaluate.py' }#
 
-def assess_aggressive(battler, oppBattler):
+def evaluate_aggressive(battler, oppBattler):
     """
     根据敌我两架坦克的攻击线路长短，衡量当前侵略性
 
@@ -1958,7 +1955,7 @@ def assess_aggressive(battler, oppBattler):
             return Status.STALEMENT
 
 
-def assess_route_similarity(route1, route2):
+def estimate_route_similarity(route1, route2):
     """
     评估两条路线的相似度
     一般用于判断选择某条路线是否可以和敌人相遇
@@ -1993,7 +1990,7 @@ def assess_route_similarity(route1, route2):
 
     return 1 / ( total / len(route1) + 1 )
 
-#{ END 'strategy/estimate.py' }#
+#{ END 'strategy/evaluate.py' }#
 
 
 
@@ -2965,30 +2962,28 @@ class Tank2Player(Player):
     def teammate(self):
         return self._teammate
 
+    @property
+    def opponents(self):
+        return self._opponents
+
 
     def set_team(self, team):
         self._team = team
 
-    def set_teammate(self, player):
-        """
-        设置队友
-
-        Input:
-            - player    Tank2Player    队友
-        """
-        assert isinstance(player, self.__class__) and player.side == self.side
+    def set_teammate(self, player): # -> Tank2Player
+        assert isinstance(player, Tank2Player) and player.side == self.side
         self._teammate = player
 
-    def set_opponents(self, opponents):
-        """
-        设置对手
-
-        Input:
-            - opponents    [Tank2Player]    对手们
-        """
+    def set_opponents(self, opponents): # -> [Tank2Player]
         for player in opponents:
-            assert isinstance(player, self.__class__) and player.side != self.side
+            assert isinstance(player, Tank2Player) and player.side != self.side
         self._opponents = opponents
+
+    def get_risk_enemy(self):
+        return self._riskyEnemy
+
+    def set_risk_enemy(self, enemy):
+        self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
 
     def get_status(self):
         return self._status
@@ -3080,7 +3075,7 @@ class Tank2Player(Player):
         # 1. 需要考虑移动后恰好被对方打中
         # -------------------------
         if Action.is_move(action):
-            oppBattlers = [ player.battler for player in self._opponents ]
+            oppBattlers = [ _player.battler for _player in self._opponents ]
             riskFreeOpps = []
             for oppBattler in oppBattlers:
                 if not oppBattler.canShoot: # 对手本回合无法射击，则不必担心
@@ -3144,7 +3139,7 @@ class Tank2Player(Player):
         action = battler.move_to(oppBattler)
 
         if map_.is_valid_move_action(tank, action):
-            for _oppBattler in [ player.battler for player in self._opponents ]: # 找到另一个敌人
+            for _oppBattler in [ _player.battler for _player in self._opponents ]: # 找到另一个敌人
                 if _oppBattler.destroyed: # 输了就不算
                     continue
                 if _oppBattler is oppBattler: # 排除目前这个敌人
@@ -3182,7 +3177,7 @@ class Tank2Player(Player):
                 #self._riskyEnemy = ??
                 return False
 
-        _oppBattlers = [ player.battler for player in self._opponents ]
+        _oppBattlers = [ _player.battler for _player in self._opponents ]
 
         for _oppBattler in _oppBattlers:
             if _oppBattler.destroyed: # 跳过已经输了的
@@ -3295,9 +3290,6 @@ class Tank2Player(Player):
         Return:
             - action   int   行为编号，如果已经输了，则返回 Action.INVALID
         """
-        teammate = self._teammate
-        tank     = self._tank
-        map_     = self._map
         battler  = self._battler
 
         if self.defeated:
@@ -3307,1365 +3299,19 @@ class Tank2Player(Player):
         if not battler.canShoot:
             self.set_status(Status.RELOADING)
 
-        #///////////#
-        #  无脑进攻  #
-        #///////////#
 
+        action = DecisionChain(
 
-        # 首先当然是拆基地！！
-        #----------------------
-        # 无脑进攻区域
-        # ---------------------
-        if battler.is_face_to_enemy_base() and battler.canShoot:
-            self.set_status(Status.READY_TO_ATTACK_BASE) # 特殊状态
-            return battler.get_next_attack_action() # 必定是射击 ...
+                    AttackBaseDecision(self, signal),
+                    EncountEnemyDecision(self, signal),
+                    OverlappingDecision(self, signal),
+                    BaseDefenseDecision(self, signal),
+                    ActiveDefenseDecision(self, signal),
+                    MarchingDecision(self, signal),
 
+                ).make_decision()
 
-        #/////////////#
-        #  预警或反击  #
-        #/////////////#
-
-        # 周围有敌人时
-        #-------------------
-        aroundEnemies = battler.get_enemies_around()
-        if len(aroundEnemies) > 0:
-            self.set_status(Status.ENCOUNT_ENEMY)
-            if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
-                assert len(aroundEnemies) == 2
-                # 首先判断是否为真正的双人夹击
-                enemy1, enemy2 = aroundEnemies
-                x, y = tank.xy
-                x1, y1 = enemy1.xy
-                x2, y2 = enemy2.xy
-                if x1 == x2 == x:
-                    if (y > y1 and y > y2) or (y < y1 and y < y2):
-                        self.set_status(Status.ENCOUNT_ONE_ENEMY)
-                        pass # 实际可视为一个人
-                elif y1 == y2 == y:
-                    if (x > x1 and x > x2) or (x < x1 and x < x2):
-                        self.set_status(Status.ENCOUNT_ONE_ENEMY)
-                        pass
-                else: # 真正的被夹击
-                    self.set_status(Status.ENCOUNT_TWO_ENEMY)
-                    oppBattlers = [ BattleTank(t) for t  in aroundEnemies ]
-                    if all( oppBattler.canShoot for oppBattler in oppBattlers ):
-                        # 如果两者都有弹药，可能要凉了 ...
-                        self.set_status(Status.DYING)
-                        if battler.canShoot:
-                            # TODO: 这种情况下有选择吗？
-                            self.set_status(Status.READY_TO_FIGHT_BACK)
-                            return battler.shoot_to(enemy1) # 随便打一个？
-                    elif all( not oppBattler.canShoot for oppBattler in oppBattlers ):
-                        # 均不能进攻的话，优先闪避到下回合没有敌人的位置（优先考虑拆家方向）
-                        firstMoveAction = tuple()
-                        attackAction = battler.get_next_attack_action()
-                        if Action.is_move(attackAction): # 如果是移动行为
-                            firstMoveAction = ( attackAction, )
-                        for action in firstMoveAction + Action.MOVE_ACTIONS:
-                            if map_.is_valid_move_action(tank, action):
-                                with map_.simulate_one_action(tank, action):
-                                    if len( battler.get_enemies_around() ) < 2: # 一个可行的闪避方向
-                                        self.set_status(Status.READY_TO_DODGE)
-                                        return action
-                        # 均不能闪避，应该是处在狭道内，则尝试任意攻击一个
-                        if battler.canShoot:
-                            # TODO: 是否有选择？
-                            self.set_status(Status.READY_TO_FIGHT_BACK)
-                            return battler.shoot_to(enemy1) # 随便打一个
-                    else: # 有一个能射击，则反击他
-                        for oppBattler in oppBattlers:
-                            if oppBattler.canShoot: # 找到能射击的敌人
-                                actions = battler.try_dodge(oppBattler)
-                                if len(actions) == 0: # 不能闪避
-                                    if battler.canShoot:
-                                        self.set_status(Status.READY_TO_FIGHT_BACK)
-                                        return battler.shoot_to(oppBattler)
-                                    else: # 要凉了 ...
-                                        break
-                                elif len(actions) == 1:
-                                    action = self.try_make_decision(actions[0])
-                                else:
-                                    action = self.try_make_decision(actions[0],
-                                                self.try_make_decision(actions[1]))
-                                if Action.is_move(action): # 统一判断
-                                    self.set_status(Status.READY_TO_DODGE)
-                                    return action
-                                # 没有办法？尝试反击
-                                if battler.canShoot:
-                                    self.set_status(Status.READY_TO_FIGHT_BACK)
-                                    return battler.shoot_to(oppBattler)
-                                else: # 要凉了
-                                    break
-                        # 没有办法对付 ..
-                        self.set_status(Status.DYING)
-                    # 无所谓的办法了...
-                    return self.try_make_decision(battler.get_next_attack_action())
-
-            # TODO:
-            #   虽然说遇到了两个一条线上的敌人，但是这不意味着后一个敌人就没有威胁 5ccee460a51e681f0e8e5b17
-
-
-            # 当前情况：
-            # ---------
-            # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
-            # 2. 敌人数量为 1
-            if len(aroundEnemies) == 1:
-                oppTank = aroundEnemies[0]
-            else: # len(aroundEnemies) == 2:
-                oppTank = battler.get_nearest_enemy()
-            oppBattler = BattleTank(oppTank)
-
-            # 根据当时的情况，评估侵略性
-            status = assess_aggressive(battler, oppBattler)
-            self.set_status(status)
-
-            # 侵略模式/僵持模式
-            #----------
-            # 1. 优先拆家
-            # 2. 只在必要的时刻还击
-            # 3. 闪避距离不宜远离拆家路线
-            #
-            if status == Status.AGGRESSIVE or status == Status.STALEMENT:
-                if not oppBattler.canShoot:
-                    # 如果能直接打死，那当然是不能放弃的！！
-                    if len( oppBattler.try_dodge(battler) ) == 0: # 必死
-                        if battler.canShoot:
-                            self.set_status(Status.READY_TO_KILL_ENEMY)
-                            return battler.shoot_to(oppBattler)
-
-                    attackAction = battler.get_next_attack_action() # 其他情况，优先进攻，不与其纠缠
-                    realAction = self.try_make_decision(attackAction) # 默认的进攻路线
-                    if Action.is_stay(realAction): # 存在风险
-                        if Action.is_move(attackAction):
-                            #
-                            # 原本移动或射击，因为安全风险而变成停留，这种情况可以尝试射击，充分利用回合数
-                            #
-                            # TODO:
-                            #   实际上，很多时候最佳路线选择从中线进攻，但从两侧进攻也是等距离的，
-                            #   在这种情况下，由于采用从中线的进攻路线，基地两侧的块并不落在线路上，因此会被
-                            #   忽略，本回合会被浪费。但是进攻基地两侧的块往往可以减短路线。因此此处值得进行
-                            #   特殊判断
-                            #
-                            fields = battler.get_destroyed_fields_if_shoot(attackAction)
-                            route = battler.get_shortest_attacking_route()
-                            for field in fields:
-                                if route.has_block(field): # 为 block 对象，该回合可以射击
-                                    action = self.try_make_decision(battler.shoot_to(field))
-                                    if Action.is_shoot(action):
-                                        self.set_status(Status.PREVENT_BEING_KILLED)
-                                        self.set_status(Status.KEEP_ON_MARCHING)
-                                        return action
-                            # TODO: 此时开始判断是否为基地外墙，如果是，则射击
-                            for field in fields:
-                                if battler.check_is_outer_wall_of_enemy_base(field):
-                                    action = self.try_make_decision(battler.shoot_to(field))
-                                    if Action.is_shoot(action):
-                                        self.set_status(Status.PREVENT_BEING_KILLED)
-                                        self.set_status(Status.KEEP_ON_MARCHING)
-                                        return action
-
-                        # 刚刚对射为两回合，尝试打破对射僵局
-                        #--------------------------------
-                        # 1. 当前为侵略性的，并且在对方地盘，尝试回退一步，与对方重叠。后退操作必须要有限制 5cd10315a51e681f0e900fa8
-                        # 2. 可以考虑往远处闪避，创造机会
-                        #
-                        if (self.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=3)
-                            and battler.is_in_enemy_site()         # 添加必须在对方地盘的限制，避免在我方地盘放人
-                            and self.has_status(Status.AGGRESSIVE) # 只有侵略性的状态可以打破僵局
-                            ):
-                            # 尝试背离敌人
-                            #---------------
-                            backMoveAction = battler.back_away_from(oppBattler)
-                            action = self.try_make_decision(backMoveAction)
-                            if Action.is_move(action):
-                                self.set_status(Status.READY_TO_BACK_AWAY)
-                                return action
-
-                            # 尝试闪避敌人
-                            #---------------
-                            # 此处需要注意的是，如果能够按近路闪避，那么在射击回合早就闪走了
-                            # 所以这里只可能是往远处闪避
-                            #
-                            for action in battler.try_dodge(oppBattler):
-                                if Action.is_move(action):
-                                    realAction = self.try_make_decision(action)
-                                    if Action.is_move(realAction):
-                                        self.set_status(Status.READY_TO_DODGE)
-                                        # 这里还是再判断一下距离
-                                        route1 = battler.get_shortest_attacking_route()
-                                        with map_.simulate_one_action(battler, action):
-                                            route2 = battler.get_shortest_attacking_route()
-                                            if route2.length > route1.length:
-                                                self.set_status(Status.WILL_DODGE_TO_LONG_WAY)
-                                        return realAction
-
-                        # 如果之前是对射，在这里需要延续一下对射状态
-                        if (self.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
-                            and not battler.canShoot    # 但是我方本回合不能射击
-                            and not oppBattler.canShoot # 并且对方本回合不能射击
-                            ):
-                            self.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射状态，用于后方打破僵持
-
-                        # 其余情况照常
-                        self.set_status(Status.PREVENT_BEING_KILLED)
-                        return realAction
-                    # 否则不予理会，直接移动或者反击
-                    action = self.try_make_decision(battler.get_next_attack_action())
-                    if not Action.is_stay(action):
-                        # 补丁
-                        #----------------------------
-                        # 针对两者距离为 2 的情况，不能一概而论！
-                        #
-                        if status == Status.STALEMENT: # 僵持模式考虑堵路
-                            _route = battler.get_route_to_enemy_by_movement(oppBattler)
-                            if _route.is_not_found():
-                                _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
-                            assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
-                            assert _route.length > 0, "unexpected overlapping enemy"
-                            if _route.length == 2:
-                                if not self.is_suitable_to_overlap_with_enemy(oppBattler): # 更适合堵路
-                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                    return Action.STAY
-                        # 其他情况均可以正常移动
-                        self.set_status(Status.KEEP_ON_MARCHING)
-                        return action
-                    #  不能移动，只好反击
-                    action = self.try_make_decision(battler.shoot_to(oppBattler))
-                    if Action.is_shoot(action):
-                        self.set_status(Status.READY_TO_FIGHT_BACK)
-                        return action
-                else:
-                    # 对方有炮弹，需要分情况 5ccb3ce1a51e681f0e8b4de1
-                    #-----------------------------
-                    # 1. 如果是侵略性的，则优先闪避，并且要尽量往和进攻路线方向一致的方向闪避，否则反击
-                    # 2. 如果是僵持的，那么优先堵路，类似于 Defensive
-                    #
-                    # TODO:
-                    #   可能需要团队信号协调 5ccc30f7a51e681f0e8c1668
-                    #
-                    if status == Status.STALEMENT:
-                        #
-                        # 首先把堵路的思路先做了，如果不能射击，那么同 aggressive
-                        #
-                        # TODO:
-                        #   有的时候这并不是堵路，而是在拖时间！ 5ccf84eca51e681f0e8ede59
-
-                        # 上一回合保持重叠，但是却被敌人先过了，这种时候不宜僵持，应该直接走人
-                        # 这种情况下直接转为侵略模式！
-                        #
-                        if (self.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
-                            and (self.has_status_in_previous_turns(Status.READY_TO_BLOCK_ROAD, turns=1)
-                                or self.has_status_in_previous_turns(Status.KEEP_ON_OVERLAPPING, turns=1))
-                            ):
-                            pass # 直接过到侵略模式
-                        else: # 否则算作正常的防守
-                            if battler.canShoot:
-                                self.set_status(Status.READY_TO_BLOCK_ROAD, Status.READY_TO_FIGHT_BACK)
-                                if battler.get_manhattan_distance_to(oppBattler) == 1:
-                                    self.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射
-                                return battler.shoot_to(oppBattler)
-
-                    # 闪避，尝试找最佳方案
-                    #-------------------------
-                    defenseAction = Action.STAY
-                    if battler.canShoot:
-                        defenseAction = battler.shoot_to(oppBattler)
-                    actions = battler.try_dodge(oppTank)
-                    attackAction = battler.get_next_attack_action()
-                    for action in actions: # 与进攻方向相同的方向是最好的
-                        if Action.is_move(action) and Action.is_same_direction(action, attackAction):
-                            realAction = self.try_make_decision(action) # 风险评估
-                            if Action.is_move(realAction):
-                                self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
-                                return realAction # 闪避加行军
-
-                    # 没有最佳的闪避方案，仍然尝试闪避
-                    #-----------------------------
-                    # 但是不能向着增加攻击线路长短的方向闪避！
-                    #
-                    route1 = battler.get_shortest_attacking_route()
-                    for action in actions:
-                        if Action.is_move(action):
-                            realAction = self.try_make_decision(action)
-                            if Action.is_move(realAction):
-                                with map_.simulate_one_action(battler, action):
-                                    route2 = battler.get_shortest_attacking_route()
-                                if route2.length > route1.length: # 不能超过当前路线长度，否则就是浪费一回合
-                                    continue
-                                else:
-                                    self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
-                                    return realAction
-
-                    # 没有不能不导致路线编程的办法，如果有炮弹，那么优先射击！
-                    # 5ccef443a51e681f0e8e64d8
-                    #-----------------------------------
-                    if Action.is_shoot(defenseAction):
-                        self.set_status(Status.READY_TO_FIGHT_BACK)
-                        if battler.get_manhattan_distance_to(oppBattler) == 1:
-                            self.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY)
-                        return defenseAction
-
-                    # 如果不能射击，那么终究还是要闪避的
-                    # 或者是无法后方移动，为了打破僵局，尝试闪避
-                    #----------------------------------
-                    for action in actions:
-                        if Action.is_move(action):
-                            realAction = self.try_make_decision(action)
-                            if Action.is_move(realAction):
-                                self.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
-                                #
-                                # 因为这种情况很有可能会出现死循环 5cd009e0a51e681f0e8f3ffb
-                                # 为了后续能够打破这种情况，这里额外添加一个状态进行标记
-                                #
-                                self.set_status(Status.WILL_DODGE_TO_LONG_WAY)
-                                return realAction
-
-                    self.set_status(Status.DYING) # 否则就凉了 ...
-                    return defenseAction
-
-                return Action.STAY
-
-
-            # 防御模式
-            #----------
-            # 1. 如果对方下回合必死，那么射击
-            # 2. 优先堵路，距离远则尝试逼近
-            # 3. 必要的时候对抗
-            # 4. 距离远仍然优先
-            #
-            # elif status == DEFENSIVE_STATUS:
-            else: # status == DEFENSIVE_STATUS or status == STALEMATE_STATUS:
-                # attackAction = self.try_make_decision(battler.get_next_attack_action()) # 默认的侵略行为
-
-                if not oppBattler.canShoot:
-
-                    if len( oppBattler.try_dodge(battler) ) == 0:
-                        if battler.canShoot: # 必死情况
-                            self.set_status(Status.READY_TO_KILL_ENEMY)
-                            return battler.shoot_to(oppBattler)
-                    #
-                    # 不能马上打死，敌人又无法攻击
-                    #-------------------------------
-                    # 优先堵路，根据双方距离判断
-                    #
-                    _route = battler.get_route_to_enemy_by_movement(oppBattler)
-                    if _route.is_not_found():
-                        _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
-                    assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
-                    assert _route.length > 0, "unexpected overlapping enemy"
-
-                    if _route.length == 1: # 双方相邻，选择等待
-
-                        # 此处首先延续一下对射状态
-                        if (self.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
-                            and not battler.canShoot    # 但是我方本回合不能射击
-                            and not oppBattler.canShoot # 并且对方本回合不能射击
-                            ):
-                            self.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射状态，用于后方打破僵持
-
-                        self.set_status(Status.READY_TO_BLOCK_ROAD)
-                        return Action.STAY
-                    elif _route.length > 2: # 和对方相隔两个格子以上
-                        if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全逼近
-                            action = battler.move_to(oppBattler)
-                            self.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路 ...
-                            return action
-                        else:
-                            self.set_status(Status.READY_TO_BLOCK_ROAD)
-                            return Action.STAY # 否则只好等额爱
-                    else: # _route.length == 2:
-                        # 相距一个格子，可以前进也可以等待，均有风险
-                        #----------------------------------------
-                        # 1. 如果对方当前回合无法闪避，下一回合最多只能接近我
-                        #    - 如果对方下回合可以闪避，那么我现在等待是意义不大的，不如直接冲上去和他重叠
-                        #    - 如果对方下回合仍然不可以闪避，那么我就选择等待，反正它也走不了
-                        # 2. 如果对方当前回合可以闪避，那么默认冲上去和他重叠
-                        #    - 如果我方可以射击，那么对方应该会判定为闪避，向两旁走，那么我方就是在和他逼近
-                        #    - 如果我方不能射击，对方可能会选择继续进攻，如果对方上前和我重叠，就可以拖延时间
-                        #
-                        # TODO:
-                        #    好吧，这里的想法似乎都不是很好 ...
-                        #    能不防御就不防御，真理 ...
-                        #
-                        """if len( oppBattler.try_dodge(battler) ) == 0:
-                            # 对手当前回合不可闪避，当然我方现在也不能射击。现在假设他下一步移向我
-                            action = oppBattler.move_to(battler) # 对方移向我
-                            if map_.is_valid_move_action(oppBattler, action):
-                                map_.simulate_one_action(oppBattler, action) # 提交模拟
-                                if len( oppBattler.try_dodge(battler) ) == 0:
-                                    # 下回合仍然不可以闪避，说明可以堵路
-                                    map_.revert()
-                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                    return Action.STAY
-                                map_.revert()
-                                # 否则直接冲上去
-                                if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全移动
-                                    moveAction = battler.move_to(oppBattler)
-                                    self.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路
-                                    return moveAction
-                                else: # 冲上去不安全，那就只能等到了
-                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                    return Action.STAY
-                        else:
-                            # 对手当前回合可以闪避，那么尝试冲上去和他重叠
-                            # TODO:
-                            #   可能弄巧成拙 5cca97a4a51e681f0e8ad227
-                            #
-                            #   这个问题需要再根据情况具体判断！
-                            #
-                            '''
-                            if self.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全重叠
-                                moveAction = battler.move_to(oppBattler)
-                                self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                return moveAction
-                            else: # 有风险，考虑等待
-                                self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                return Action.STAY
-                            '''
-                            #
-                            # TODO:
-                            #   是否应该根据战场情况进行判断，比如停下来堵路对方一定无法走通？
-                            #
-                            #   假设自己为钢墙然后搜索对方路径？
-                            #
-                            self.set_status(Status.READY_TO_BLOCK_ROAD)
-                            return Action.STAY"""
-                        self.set_status(Status.READY_TO_BLOCK_ROAD)
-                        return Action.STAY # 似乎没有比这个这个更好的策略 ...
-                # 对方可以射击
-                else:
-                    if battler.canShoot: # 优先反击
-                        self.set_status(Status.READY_TO_FIGHT_BACK)
-                        if battler.get_manhattan_distance_to(oppBattler) == 1:   # 贴脸
-                            self.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 触发对射状态
-                        return battler.shoot_to(oppBattler)
-                    # 不能反击，只好闪避
-                    actions = battler.try_dodge(oppBattler)
-                    if len(actions) == 0:
-                        self.set_status(Status.DYING) # 凉了 ...
-                        action = Action.STAY
-                    elif len(actions) == 1:
-                        action = self.try_make_decision(actions[0])
-                    else: # len(actions) == 2:
-                        action = self.try_make_decision(actions[0],
-                                        self.try_make_decision(actions[1]))
-                    if Action.is_move(action): # 统一判断
-                        self.set_status(Status.READY_TO_DODGE)
-                        return action
-                    # 否则就凉了 ...
-                    self.set_status(Status.DYING)
-
-                return Action.STAY
-
-            # 僵持模式？
-            #--------------
-            # 双方进攻距离相近，可能持平
-            # # TODO:
-            #   观察队友？支援？侵略？
-            # 1. 优先防御
-            # 2. ....
-            #
-            # elif status == STALEMATE_STATUS:
-
-
-
-        # (inserted) 主动打破重叠的信号
-        #------------------------------
-        # 1. 如果是侵略模式，则主动前进/射击
-        # 2. 如果是防御模式，则主动后退
-        # 3. 如果是僵持模式？ 暂时用主动防御逻辑
-        #       TODO:
-        #           因为还没有写出强攻信号，主动攻击多半会失败 ...
-        #
-        if signal == Signal.SUGGEST_TO_BREAK_OVERLAP:
-            self.set_status(Status.ENCOUNT_ENEMY)
-            self.set_status(Status.OVERLAP_WITH_ENEMY)
-            oppTank = battler.get_overlapping_enemy()
-            oppBattler = BattleTank(oppTank)
-            oppPlayer = Tank2Player(oppBattler)
-            status = assess_aggressive(battler, oppBattler)
-            self.set_status(status)
-            if status == Status.AGGRESSIVE: # 只有侵略模式才前进
-                action = battler.get_next_attack_action()
-                if Action.is_shoot(action): # 能触发这个信号，保证能射击
-                    self.set_status(Status.READY_TO_BREAK_OVERLAP)
-                    self.set_status(Status.KEEP_ON_MARCHING)
-                    return ( action, Signal.READY_TO_BREAK_OVERLAP )
-                elif Action.is_move(action): # 专门为这个情况写安全性测试
-                    if self.is_safe_to_break_overlap_by_movement(action, oppBattler):
-                        # 没有风险，且已知这个移动是符合地图情况的
-                        self.set_status(Status.READY_TO_BREAK_OVERLAP)
-                        self.set_status(Status.KEEP_ON_MARCHING)
-                        return ( action, Signal.READY_TO_BREAK_OVERLAP )
-                    else:
-                        pass # 这个位置漏下去，让 DEFENSIVE 模式的逻辑继续处理
-                        #self.set_status(Status.KEEP_ON_OVERLAPPING) # 继续保持状态
-                        #return ( Action.STAY, Signal.CANHANDLED )
-
-                else: # 只能等待？ 注定不会到达这里
-                    self.set_status(Status.KEEP_ON_OVERLAPPING) # 继续保持状态
-                    return ( Action.STAY, Signal.CANHANDLED )
-
-            #　非侵略模式，或者侵略模式想要前进但是不安全，那么就往后退堵路
-            #------------------------
-            # 为了防止这种情况的发生 5cd356e5a51e681f0e921453
-            #
-            # 这里不只思考默认的最优路径，而是将所有可能的最优路径都列举出来
-            # 因为默认的最优路径有可能是破墙，在这种情况下我方坦克就不会打破重叠
-            # 这就有可能错失防御机会
-            #
-            # 当然还要注意这种一直跟随和被拖着打的情况 5cd3f56d86d50d05a0083621 / 5ccec5a6a51e681f0e8e46c2
-            #
-            for enemyAttackRoute in oppBattler.get_all_shortest_attacking_routes():
-
-                oppAction = oppBattler.get_next_attack_action(enemyAttackRoute) # 模拟对方的侵略性算法
-                if Action.is_move(oppAction) or Action.is_shoot(oppAction): # 大概率是移动
-                    # 主要是为了确定方向
-                    oppAction %= 4
-                    #
-                    # 先处理对方跟随我的情况
-                    #--------------------------
-                    # 上回合试图通过移动和对方打破重叠，但是现在还在重叠
-                    # 说明对方跟着我走了一个回合
-                    #
-                    if (self.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
-                        and Action.is_move(self.get_previous_action(back=1))
-                        ):
-                        oppPlayer.add_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
-
-
-                    if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
-                        and battler.canShoot # 这回合可以射击，则改为射击
-                        ):
-                        self.set_status(Status.READY_TO_BREAK_OVERLAP,
-                                        Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
-                        return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
-
-                    # 检查是否可以安全打破重叠
-                    #--------------------------
-                    if self.is_safe_to_break_overlap_by_movement(oppAction, oppBattler):
-                        self.set_status(Status.READY_TO_BREAK_OVERLAP)
-                        self.set_status(Status.READY_TO_BLOCK_ROAD)
-                        return ( oppAction, Signal.READY_TO_BREAK_OVERLAP )
-
-            else: # 否则选择等待
-                self.set_status(Status.KEEP_ON_OVERLAPPING)
-                return ( Action.STAY, Signal.CANHANDLED )
-
-
-
-        # 与敌人重合时，一般只与一架坦克重叠
-        #--------------------------
-        # 1. 根据路线评估侵略性，确定采用进攻策略还是防守策略
-        # 2.
-        #
-        if battler.has_overlapping_enemy():
-            self.set_status(Status.ENCOUNT_ENEMY)
-            self.set_status(Status.OVERLAP_WITH_ENEMY)
-            oppTank = battler.get_overlapping_enemy()
-            oppBattler = BattleTank(oppTank)
-            oppPlayer = Tank2Player(oppBattler)
-
-            # 评估进攻路线长度，以确定采用保守策略还是入侵策略
-            status = assess_aggressive(battler, oppBattler)
-            self.set_status(status)
-
-            # 侵略模式
-            #-----------
-            # 1. 直奔对方基地，有机会就甩掉敌人
-            #
-            if status == Status.AGGRESSIVE:
-                if not oppBattler.canShoot: # 对方不能射击，对自己没有风险
-                    # 尝试继续行军
-                    action = battler.get_next_attack_action()
-                    if Action.is_move(action): # 下一步预计移动
-                        realAction = self.try_make_decision(action)
-                        if Action.is_move(realAction): # 继续起那就
-                            self.set_status(Status.KEEP_ON_MARCHING)
-                            return realAction
-                        # 否则就是等待了，打得更有侵略性一点，可以尝试向同方向开炮！
-                        realAction = self.try_make_decision(action + 4)
-                        if Action.is_shoot(realAction):
-                            self.set_status(Status.KEEP_ON_MARCHING)
-                            return realAction
-                    elif Action.is_shoot(action): # 下一步预计射击
-                        realAction = self.try_make_decision(action)
-                        if Action.is_shoot(realAction):
-                            self.set_status(Status.KEEP_ON_MARCHING)
-                            return realAction
-                    else: # 否则停留
-                        self.set_status(Status.KEEP_ON_OVERLAPPING) # 可能触发 Signal.SUGGEST_TO_BREAK_OVERLAP
-                        return Action.STAY
-                else:
-                    # TODO: 根据历史记录分析，看看是否应该打破僵局
-                    return Action.STAY # 原地等待
-
-            # 防御模式
-            #------------
-            # 1. 尝试回退堵路
-            # 2. 不行就一直等待
-            #   # TODO:
-            #       还需要根据战场形势分析 ...
-            #
-            #elif status == DEFENSIVE_STATUS:
-            else:
-                # 先检查对方上回合是否在跟随我移动
-                #-------------------------------
-                if (self.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
-                    and Action.is_move(self.get_previous_action(back=1))
-                    ):
-                    oppPlayer.add_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
-
-                if not oppBattler.canShoot: # 对方不能射击，对自己没有风险，那么就回头堵路！
-                    #
-                    # 假设对方采用相同的侵略性算法
-                    #
-                    oppAction = oppBattler.get_next_attack_action()
-                    if Action.is_move(oppAction): # 大概率是移动
-
-                        # 首先先检查对方是否会跟随我，优先击杀
-                        #--------------------------
-                        if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
-                            and battler.canShoot # 这回合可以射击，则改为射击
-                            ):
-                            self.set_status(Status.READY_TO_BREAK_OVERLAP,
-                                            Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
-                            return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
-
-                        # 正常情况下选择堵路
-                        #----------------------
-                        if self.is_safe_to_break_overlap_by_movement(oppAction, oppBattler): # 模仿敌人的移动方向
-                            self.set_status(Status.READY_TO_BLOCK_ROAD) # 认为在堵路
-                            return oppAction
-
-                # 否则等待
-                self.set_status(Status.READY_TO_BLOCK_ROAD)
-                return Action.STAY
-
-            # 僵持模式
-            #------------
-            #elif status == STALEMATE_STATUS:
-            #    raise NotImplementedError
-
-            # TODO:
-            #   more strategy ?
-            #
-            #   - 追击？
-            #   - 敌方基地在眼前还可以特殊处理，比如没有炮弹默认闪避
-
-
-
-
-        #
-        # 先观察敌方状态，确定应该进攻。
-        # 尽管对于大部分地图来讲，遵寻 BFS 的搜索路线，可以最快速地拆掉对方基地
-        # 但是对于一些地图来说，由于地形限制，我方拆家速度注定快不过对方，
-        # 这种时候就需要调整为防御策略
-
-
-        #
-        # 现在没有和敌人正面相遇
-        # 在进入主动防御和行军之前，首先先处理一种特殊情况
-        # 这种特殊情况不应该依赖于任意一种模式，也要求坦克一定要
-        # 和他有关系，否则很有可能被别人隔墙牵制
-        # ----------------------------------------------
-        # 在敌人就要攻击我方基地的情况下，应该优先移动，而非预判击杀
-        # 这种防御性可能会带有自杀性质
-        #
-        # TODO:
-        # 1. 如果敌人当前回合炮弹冷却，下一炮就要射向基地，如果我方坦克下一步可以拦截
-        #    那么优先移动拦截，而非防御
-        # 2. 如果敌人当前回合马上可以开盘，那么仍然考虑拦截（自杀性）拦截，可以拖延时间
-        #    如果此时另一个队友还有两步就拆完了，那么我方就有机会胜利
-        #
-        for oppBattler in [ player.battler for player in self._opponents ]:
-            if oppBattler.is_face_to_enemy_base(): # 面向基地
-                if oppBattler.canShoot: # 敌方可以射击，我方如果一步内可以拦截，则自杀性防御
-                    for action in Action.MOVE_ACTIONS: # 尝试所有可能的移动情况
-                        if map_.is_valid_move_action(tank, action):
-                            with map_.simulate_one_action(tank, action):
-                                if not oppBattler.is_face_to_enemy_base(): # 此时不再面向我方基地，为正确路线
-                                    self.set_status(Status.SACRIFICE_FOR_OUR_BASE)
-                                    return action
-                else: # 敌方不可射击
-                    for action in Action.MOVE_ACTIONS: # 敌方不能射击，我方尝试移动两步
-                        if map_.is_valid_move_action(tank, action):
-                            with map_.simulate_one_action(tank, action):
-                                if not oppBattler.is_face_to_enemy_base(): # 一步防御成功
-                                    self.set_status(Status.BLOCK_ROAD_FOR_OUR_BASE)
-                                    return action
-                                else: # 尝试第二步
-                                    if map_.is_valid_move_action(tank, action):
-                                        with map_.simulate_one_action(tank, action):
-                                            if not oppBattler.is_face_to_enemy_base(): # 两步防御成功
-                                                self.set_status(Status.SACRIFICE_FOR_OUR_BASE)
-                                                return action # 当前回合先移动一步，下回合则在此处按一步判定
-
-
-        oppTank = battler.get_nearest_enemy() # 从路线距离分析确定最近敌人
-        oppBattler = BattleTank(oppTank)
-        status = assess_aggressive(battler, oppBattler)
-        self.set_status(status)
-
-
-        # 暂时禁用主动防御！目前开发得太不完善了，容易反而延误战机
-
-        # 主动防御策略
-        #---------------------
-        # TODO:
-        #   主动堵路或预判射击，该如何权衡？
-        #-------------------------------------
-        # 1. 主动追击敌方目标，并会预判对方下回合行为进行射击
-        # 2. 主动堵路，和敌方目标重叠，这种情况对应于两者斜对角的情况
-        # 3. TODO:
-        #       尽可能少拆自己基地的外墙 ...
-        #
-        """
-        if status == Status.DEFENSIVE: # 防御性的，就触发主动防御
-            #
-            #   前期如果过早决策为 Defensive 可能会错失战机，因为并不是每个人都会使用相同
-            #   的 BFS 算法，如果一开始就把对方界定为和己方的算法一致，那么可能会显得过于消极
-            #   因此可以考虑前几个回合忽略这个状态，而改用常规进攻，一定步数后，再决策是否为
-            #   Defensive
-            #
-            currentTurn = map_.turn # 这个值表示决策前为第几回合，初值为第 0 回合
-            if currentTurn < MINIMAL_TURNS_FOR_ACTIVE_DEFENSIVE_DECISION:
-                # 相当于 右边值 所代表的的回合数结束，下一回合开始开启主动防御
-                self.remove_status(Status.DEFENSIVE)
-                self.remove_status(Status.STALEMENT)
-                self.set_status(Status.AGGRESSIVE) # 前期以侵略性为主
-
-            else:
-                enemyAction = oppBattler.get_next_attack_action()
-                self.set_status(Status.HUNTING_ENEMY)
-                #
-                # TODO:
-                #   还可以堵路，怎么设计？
-                #   可以通过记忆来判断 5cca6810a51e681f0e8ab0c8 ?
-                #
-                #   主动预判，可能会弄巧成拙 5cca97a4a51e681f0e8ad227
-                #
-                #
-                # 预判是否可以射击
-                # --------------------
-                #   假设敌方采用与我相同的 BFS 算法，那么他下一回合的移动路线会是什么,
-                #   如果是移动行为，那么判断移动后是否可能恰好处在我方坦克的范围内，
-                #   在这种情况下，有可能将敌方坦克击杀
-                #
-                # TODO:
-                # 1. 可以根据历史行为拟合出路线，猜测下一回合敌方的移动位置？
-                # 2. 可以评估敌方的侵略性，如果能够从一些动作中学习到的话。那么这一步可以预测
-                #    击杀的概率，从而决定是击杀还是继续
-
-                #
-                # 应该优先堵路？因为对方显然不想和你对抗？
-                #
-
-                if Action.is_move(enemyAction):
-                    if battler.canShoot: # 如果我方能射击，判断是否能击杀，必须在地图模拟前先行判断
-                        map_.simulate_one_action(oppTank, enemyAction) # 提交地图模拟
-                        for _enemy in oppBattler.get_enemies_around():
-                            if _enemy is tank: # 发现敌方 tank 下一步决策后，会出现在我方 tank 前
-                                shootAction = battler.shoot_to(oppTank) # 保存这个动作
-                                map_.revert()
-                                self.set_status(Status.ANTICIPATE_TO_KILL_ENEMY)
-                                # 侵略行为，不需要检查安全性，否则大概率检查不通过 ...
-                                return shootAction
-                        map_.revert()
-                elif Action.is_shoot(enemyAction): # 射击行为，遇到墙了？
-                    pass
-
-                # 否则正常追击
-                huntingAction = battler.get_next_hunting_action(oppTank)
-                return self.try_make_decision(huntingAction)
-
-
-        # 如果是僵持，那么主动进攻？
-        elif status == Status.STALEMENT:
-            pass
-
-
-        #　侵略性的，那么主动进攻
-        else:
-            pass
-        """
-
-
-        # 重写主动防御策略
-        #-----------------------
-        # 不要追击敌人，而是选择保守堵路策略！
-        #
-        # 1. 对于路线差为 2 的情况，选择堵路，而非重叠
-        # 2. 如果自己正常行军将会射击，那么判断射击所摧毁的块是否为敌人进攻路线上的块
-        #    如果是，则改为己方改为移动或者停止
-        #
-        if status == Status.DEFENSIVE:
-            #
-            # 避免过早进入 DEFENSIVE 状态
-            #
-            currentTurn = map_.turn
-            if currentTurn < 2:  # 前两回合结束前不要触发主动防御！
-
-                self.remove_status(Status.DEFENSIVE)
-                self.set_status(Status.AGGRESSIVE)   # 前期以侵略性为主
-
-            else:
-
-                #
-                # 判断路线是否为 2
-                #-------------------
-                # 如果是路线为 2
-                # 则选择不重叠，只堵路
-                #
-                _route = battler.get_route_to_enemy_by_movement(oppBattler)
-                if _route.is_not_found():
-                    _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
-                assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
-                assert _route.length > 0, "unexpected overlapping enemy"
-                if _route.length == 2:
-                    if (
-                            # 可能是主动防御但是为了防止重叠而等待
-                            (
-                                self.has_status_in_previous_turns(Status.ACTIVE_DEFENSIVE, turns=1)
-                                and self.has_status_in_previous_turns(Status.READY_TO_BLOCK_ROAD, turns=1)
-                                and Action.is_stay(self.get_previous_action(back=1))
-                            )
-
-                        or
-                            # 可能是为了防止被杀而停止
-                            (
-                                self.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED)
-                                and Action.is_stay(self.get_previous_action(back=1))
-                            )
-
-                        ):
-                        oppPlayer = Tank2Player(oppBattler)
-                        if Action.is_stay(oppPlayer.get_previous_action(back=1)): # 对方上回合在等待
-                            #
-                            # 但是遇到这种情况就非常尴尬 5cd356e5a51e681f0e921453
-                            #
-                            # 需要再判断一下是否有必要上前堵路
-                            #
-                            _shouldMove = False
-                            x1, y1 = oppBattler.xy
-                            x2, y2 = _route[1].xy # 目标位置
-                            enemyAttackRoute = oppBattler.get_shortest_attacking_route()
-                            if (x2, y2) in enemyAttackRoute: # 下一步移动为进攻路线
-                                enemyMoveAction = Action.get_move_action(x1, y1, x2, y2)
-                                with map_.simulate_one_action(oppBattler, enemyMoveAction):
-                                    for enemyDodgeAction in oppBattler.try_dodge(battler): # 如果敌人上前后可以闪避我
-                                        route1 = oppBattler.get_shortest_attacking_route()
-                                        with map_.simulate_one_action(oppBattler, enemyDodgeAction):
-                                            route2 = oppBattler.get_shortest_attacking_route()
-                                            if route2.length <= route1.length: #　并且闪避的路线不是原路返回
-                                                _shouldMove = True
-                                                break
-
-                            #
-                            # 真正的值得堵路的情况
-                            #
-                            if _shouldMove:
-                                x1, y1 = battler.xy
-                                x2, y2 = _route[1].xy # 跳过开头
-                                moveAction = Action.get_move_action(x1, y1, x2, y2)
-                                if map_.is_valid_move_action(battler, moveAction): # 稍微检查一下，应该本来是不会有错的
-                                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                                    self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                    return moveAction
-
-                    #
-                    # 否则选择不要上前和敌人重叠，而是堵路
-                    #
-                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                    self.set_status(Status.READY_TO_BLOCK_ROAD)
-                    return Action.STAY
-
-
-                # 转向寻找和敌方进攻路线相似度更高的路线
-                #--------------------------------------
-                #
-                enemyAttackRoute = oppBattler.get_shortest_attacking_route()
-                _routes = [ route for route in battler.get_all_shortest_attacking_routes(delay=3) ] # 允许 3 步延迟
-                _similarities = [ assess_route_similarity(r, enemyAttackRoute) for r in _routes ]
-                #debug_print(list(zip(_similarities, _routes)))
-                idx = np.argmax( _similarities ) # 相似度最大的路线
-                closestAttackRoute = _routes[idx]
-
-                #
-                # 判断下一步是否可以出现在敌人的攻击路径之上 5cd31d84a51e681f0e91ca2c
-                #-------------------------------
-                # 如果可以，就移动过去
-                #
-                x1, y1 = battler.xy
-                for x3, y3 in battler.get_surrounding_empty_field_points():
-                    if (x3, y3) in enemyAttackRoute:
-                        moveAction = Action.get_move_action(x1, y1, x3, y3)
-                        assert map_.is_valid_move_action(battler, moveAction)
-                        willMove = False # 是否符合移动的条件
-                        realAction = self.try_make_decision(moveAction)
-                        if Action.is_move(realAction):
-                            willMove = True
-                        elif self.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 打破僵局
-                            oppPlayer = Tank2Player(self._riskyEnemy)
-                            if (oppPlayer.battler.canShoot # 当回合可以射击
-                                and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
-                                ): # 说明敌人大概率不打算攻击我
-                                willMove = True
-                        #
-                        # 符合了移动的条件
-                        # 但是还需要检查移动方向
-                        # 不能向着远离敌人的方向移动，不然就会后退 ... 5cd33351a51e681f0e91da39
-                        #
-                        if willMove:
-                            distance1 = battler.get_manhattan_distance_to(oppBattler)
-                            with map_.simulate_one_action(battler, moveAction):
-                                distance2 = battler.get_manhattan_distance_to(oppBattler)
-                                if distance2 > distance1: # 向着远处移动了
-                                    pass
-                                else:
-                                    # 添加一个限制，必须要移动后出现在敌人的附近
-                                    # 否则约束过弱，容易导致前期乱跑的情况 5cd39434a51e681f0e924128
-                                    #
-                                    for enemy in oppBattler.get_enemies_around():
-                                        if enemy is tank:
-                                            self.set_status(Status.ACTIVE_DEFENSIVE)
-                                            self.set_status(Status.READY_TO_BLOCK_ROAD)
-                                            return moveAction
-
-
-                #
-                # 判断自己的下一步是否为敌人开路
-                #-------------------------
-                # 如果自己下一个行为是射击，然后所射掉的块为敌人进攻路线上的块
-                # 那么将这个动作转为移动或者停止
-                #
-                # TODO:
-                #   这个动作是有条件的，通常认为是，块就处在敌人的周围，我将块打破后
-                #   敌人有炮，我不能马上移到块的，这样就可能让敌人过掉，在这种情况下避免开炮
-                #
-                attackAction = battler.get_next_attack_action(closestAttackRoute)
-                realAction = self.try_make_decision(attackAction)
-                if Action.is_shoot(realAction):
-                    fields = battler.get_destroyed_fields_if_shoot(realAction)
-                    if len(fields) == 1:
-                        field = fields[0]
-                        if isinstance(field, BrickField):
-                            enemyAttackRoute = oppBattler.get_shortest_attacking_route()
-                            if enemyAttackRoute.has_block(field): # 打掉的 Brick 在敌人进攻路线上
-                                #
-                                # 再尝试模拟，是否会导致上述情况
-                                #
-                                # TODO:
-                                #   还需要分析敌人的行为!
-                                #
-                                _dontShoot = False
-
-                                with map_.simulate_one_action(battler, realAction):
-                                    moveAction = realAction - 4
-                                    with map_.simulate_one_action(battler, moveAction): # 再走一步
-                                        # 敌方模拟两步
-                                        with outer_label() as OUTER_BREAK:
-                                            for action in oppBattler.get_all_valid_actions():
-                                                with map_.simulate_one_action(oppBattler, action):
-                                                    for action in oppBattler.get_all_valid_actions():
-                                                        with map_.simulate_one_action(oppBattler, action):
-
-                                                            if battler.destroyed:
-                                                                _dontShoot = True
-                                                            else:
-                                                                for enemy in oppBattler.get_enemies_around():
-                                                                    if enemy is tank:
-                                                                        _dontShoot = True
-                                                            if _dontShoot:
-                                                                raise OUTER_BREAK
-
-                                if _dontShoot:
-                                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                                    return self.try_make_decision(moveAction) # 移动/停止
-
-                # 否则直接采用主动防御的进攻策略
-                #
-                # TODO:
-                #   这是个糟糕的设计，因为这相当于要和下方的进攻代码重复一遍
-                #
-                if battler.is_in_our_site():  # 只有在我方地盘的时候才触发
-                    #
-                    # 首先实现禁止随便破墙
-                    #
-                    if Action.is_shoot(realAction):
-                        #
-                        # 敌人处在墙后的水平路线上，并且与墙的间隔不超过 1 个空格 5cd33a06a51e681f0e91de95
-                        # 事实上 1 个空格是不够的！ 5cd35e08a51e681f0e92182e
-                        #
-                        enemy = battler.get_enemy_behind_brick(realAction, interval=-1)
-                        if enemy is not None:
-                            self.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
-                            self.set_status(Status.ACTIVE_DEFENSIVE)
-                            return Action.STAY
-                        #
-                        # 敌人下一步可能移到墙后面
-                        #
-                        x1, y1 = oppBattler.xy
-                        for x2, y2 in oppBattler.get_surrounding_empty_field_points():
-                            moveAction = Action.get_move_action(x1, y1, x2, y2)
-                            assert map_.is_valid_move_action(oppBattler, moveAction)
-                            with map_.simulate_one_action(oppBattler, moveAction):
-                                if battler.get_enemy_behind_brick(realAction, interval=-1) is not None: # 此时如果直接出现在墙的后面
-                                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                                    return Action.STAY
-
-
-                    if Action.is_stay(realAction):
-                        # (inserted) 主动打破僵局：因为遇到敌人，为了防止被射杀而停留
-                        # 注：
-                        #   这段代码复制自下方的侵略模式
-                        #--------------------------
-                        if Action.is_move(attackAction):
-                            if self.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 即将停留第二回合
-                                oppPlayer = Tank2Player(oppBattler)
-                                if (Action.is_move(oppPlayer.get_previous_action(back=1))
-                                    and battler.get_manhattan_distance_to(oppBattler) == 2
-                                    ): # 这种情况对应着对方刚刚到达拐角处，这种情况是有危险性的，因此再停留一回合 5cd4045c86d50d05a00840e1
-                                    pass
-                                elif oppBattler.canShoot: # 当回合可以射击，并且我上回合停留，因此敌人上回合可以射击
-                                    # 说明敌人大概率不打算攻击我
-                                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                                    return attackAction
-
-                        self.set_status(Status.PREVENT_BEING_KILLED) # 否则标记为防止被杀，用于上面的触发
-
-                    self.set_status(Status.ACTIVE_DEFENSIVE)
-                    return realAction
-
-
-
-        #///////////#
-        #  常规进攻  #
-        #///////////#
-
-
-        # (inserted) 准备破墙信号
-        #--------------------------
-        # 触发条件：
-        #
-        #   1. 对应于双方对峙，我方开好后路后触发某些条件强制破墙
-        #   2. 对方刚刚从墙后移开，我方存在后路，这个时候强制破墙
-        #
-        # 收到这个信号的时候，首先检查是否可以闪避
-        #
-        #   1. 如果可以闪避，就返回可以破墙的信号
-        #   2. 如果不可以闪避，就返回这回合准备后路的信号
-        #
-        if signal == Signal.PREPARE_FOR_BREAK_BRICK:
-            self.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
-            self.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
-            attackAction = battler.get_next_attack_action()
-            oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
-
-            _undoRevertTurns = 0
-            while oppTank is None: #　对应于敌方刚离开的那种触发条件
-                # 可能存在多轮回滚，因为别人的策略和我们的不一样！
-                # 给别人回滚的时候必须要考虑多回合！
-                map_.revert()
-                _undoRevertTurns += 1
-                oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
-
-            self._riskyEnemy = BattleTank(oppTank) # 重新设置这个敌人！
-            assert oppTank is not None
-            dodgeActions = battler.try_dodge(oppTank)
-            if len(dodgeActions) == 0:
-                # 准备凿墙
-                breakBrickActions = battler.break_brick_for_dodge(oppTank)
-                if len(breakBrickActions) == 0: # 两边均不是土墙
-                    res = (  Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
-                else:
-                    self.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
-                    res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
-            else:
-                # 可以闪避，那么回复团队一条消息，下一步是破墙动作
-                shootAction = battler.shoot_to(oppTank)
-                self.set_status(Status.READY_TO_BREAK_BRICK)
-                res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
-
-            for _ in range(_undoRevertTurns):
-                map_.undo_revert()
-
-            return res
-
-        # (inserted) 强攻信号
-        #-------------------------
-        if signal == Signal.FORCED_MARCH:
-            attackAction = battler.get_next_attack_action() # 应该是移动行为，且不需检查安全性
-            self.set_status(Status.READY_TO_FORCED_MARCH)
-            return ( attackAction, Signal.READY_TO_FORCED_MARCH )
-
-
-        # 没有遭遇任何敌人
-        #-----------------
-        # 1. 进攻
-        # 2. 不会主动破墙
-        # 3. 遇到僵局，会在指定回合后自动打破僵局
-        # 4. 遇到有风险的路径导致需要停止不前的，会考虑寻找相同长度但是安全的路径，并改变方向
-        #
-        returnAction = Action.STAY # 将会返回的行为，默认为 STAY
-        with outer_label() as OUTER_BREAK:
-            for route in battler.get_all_shortest_attacking_routes(): # 目的是找到一个不是停留的动作，避免浪费时间
-
-                # 首先清除可能出现的状态，也就是导致 stay 的状况
-                self.remove_status( Status.WAIT_FOR_MARCHING,
-                                    Status.PREVENT_BEING_KILLED,
-                                    Status.HAS_ENEMY_BEHIND_BRICK )
-
-                attackAction = battler.get_next_attack_action(route)
-                realAction = self.try_make_decision(attackAction)
-                if Action.is_stay(realAction): # 存在风险
-                    if Action.is_move(attackAction):
-
-                        # (inserted) 主动打破僵局：因为遇到敌人，为了防止被射杀而停留
-                        # 注：
-                        #   在上方的主动防御模式里还有一段和这里逻辑基本一致的代码
-                        #--------------------------
-                        if (self.has_status_in_previous_turns(Status.WAIT_FOR_MARCHING, turns=1)
-                            and self.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1)
-                            ): # 即将停留第二回合
-                            oppBattler = BattleTank(self._riskyEnemy)
-                            oppPlayer = Tank2Player(oppBattler)
-                            if (oppBattler.canShoot # 当回合可以射击
-                                and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
-                                ): # 说明敌人大概率不打算攻击我
-                                if (Action.is_move(oppPlayer.get_previous_action(back=1))
-                                    and battler.get_manhattan_distance_to(oppBattler) == 2
-                                    ): # 这种情况对应着对方刚刚到达拐角处，这种情况是有危险性的，因此再停留一回合 5cd4045c86d50d05a00840e1
-                                    pass
-                                else:
-                                    self.set_status(Status.KEEP_ON_MARCHING)
-                                    returnAction = attackAction
-                                    raise OUTER_BREAK
-
-                        # 原本的移动，现在变为停留
-                        #------------------------
-                        # 停着就是在浪费时间，不如选择进攻
-                        #
-                        fields = battler.get_destroyed_fields_if_shoot(attackAction)
-                        #
-                        # 如果当前回合射击可以摧毁的对象中，包含自己最短路线上的块
-                        # 那么就射击
-                        #
-                        for field in fields:
-                            if route.has_block(field): # 为 block 对象，该回合可以射击
-                                action = self.try_make_decision(battler.shoot_to(field))
-                                if Action.is_shoot(action):
-                                    # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
-                                    self.set_status(Status.WAIT_FOR_MARCHING)
-                                    self.set_status(Status.PREVENT_BEING_KILLED)
-                                    returnAction = action
-                                    raise OUTER_BREAK
-                        #
-                        # 如果能摧毁的是基地外墙，仍然选择攻击
-                        # 因为在攻击后可能可以给出更加短的路线
-                        #
-                        for field in fields:
-                            if battler.check_is_outer_wall_of_enemy_base(field):
-                                action = self.try_make_decision(battler.shoot_to(field))
-                                if Action.is_shoot(action):
-                                    # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
-                                    self.set_status(Status.WAIT_FOR_MARCHING)
-                                    self.set_status(Status.PREVENT_BEING_KILLED)
-                                    returnAction = action
-                                    raise OUTER_BREAK
-
-                        #
-                        # 如果不能摧毁和地方基地周围的墙，但是可以摧毁与自己中间相差一格的墙，那么仍然选择攻击
-                        # 这种情况多半属于，如果当前回合往前走一步，可能被垂直方向的敌人射杀，因为不敢前进
-                        # 在多回合后，我方可能会主动突破这种僵持情况。在我方主动向前一步的时候，敌人将可以
-                        # 射击我方坦克。如果前方有一个空位，那么我方坦克就可以闪避到前方的空位上，从而继续前进。
-                        # 如果这个位置本来是个砖块，但是没有预先摧毁，我方坦克在突击后就只能选择原路闪回，
-                        # 那么就可能出现僵局
-                        # 因此这里预先摧毁和自己相差一格的土墙，方便后续突击
-                        #
-                        # 如果是防御状态，那么不要随便打破墙壁！ 5cd31d84a51e681f0e91ca2c
-                        #
-                        if (not self.has_status(Status.DEFENSIVE)  # 防御性无效
-                            and battler.is_in_enemy_site()  # 只有在对方基地的时候才有效
-                            ):
-                            for field in fields:
-                                if isinstance(field, BrickField):
-                                    if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 相当于土墙
-                                        action = self.try_make_decision(battler.shoot_to(field))
-                                        if Action.is_shoot(action):
-                                            # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
-                                            self.set_status(Status.WAIT_FOR_MARCHING)
-                                            self.set_status(Status.PREVENT_BEING_KILLED)
-                                            returnAction = action
-                                            raise OUTER_BREAK
-
-
-                    elif Action.is_shoot(attackAction):
-                        # 如果为射击行为，检查是否是墙后敌人造成的
-                        enemy = battler.get_enemy_behind_brick(attackAction)
-                        if enemy is not None:
-                            self._riskyEnemy = BattleTank(enemy) # 额外指定一下，确保是这个敌人造成的
-                            self.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
-
-
-                    # 否则停止不前
-                    # 此时必定有 riskyEnemy
-                    #
-                    self.set_status(Status.WAIT_FOR_MARCHING) # 可能触发 Signal.PREPARE_FOR_BREAK_BRICK 和 Signal.FORCED_MARCH
-                    self.set_status(Status.PREVENT_BEING_KILLED) # TODO: 这个状态是普适性的，希望在上面的各种情况中都能补全
-                    returnAction = Action.STAY
-                    continue # 停留动作，尝试继续寻找
-
-                # 对于移动行为，有可能处于闪避到远路又回来的僵局中 5cd009e0a51e681f0e8f3ffb
-                # 因此在这里根据前期状态尝试打破僵局
-                #----------------------------------
-                if (self.has_status_in_previous_turns(Status.WILL_DODGE_TO_LONG_WAY, turns=1) # 说明上回合刚闪避回来
-                    and Action.is_move(realAction) # 然后这回合又准备回去
-                    ):
-                    # TODO:
-                    #   此处是否有必要进一步检查两次遇到的敌人为同一人？
-                    #
-                    #
-                    # 首先考虑前方相距一格处是否有土墙，如果有，那么就凿墙 5cd009e0a51e681f0e8f3ffb
-                    #
-                    fields = battler.get_destroyed_fields_if_shoot(realAction)
-                    for field in fields:
-                        if isinstance(field, BrickField):
-                            if battler.get_manhattan_distance_to(field) == 2:
-                                action = self.try_make_decision(battler.shoot_to(field))
-                                if Action.is_shoot(action):
-                                    self.set_status(Status.KEEP_ON_MARCHING) # 真实体现
-                                    returnAction = action
-                                    raise OUTER_BREAK
-                    # TODO:
-                    #   还可以选择绕路？
-
-
-                #
-                # 预判一步，如果下一步会遇到敌人，并且不得不回头闪避的话，就考虑先摧毁与自己中间相差一格的墙（如果存在）
-                # 类似于主动防御的情况
-                #
-                if Action.is_move(realAction):
-                    if (not self.has_status(Status.DEFENSIVE) #　防御性无效
-                        and battler.is_in_enemy_site()  # 只有在敌方地盘时才有效！
-                        ):
-                        _needToBreakWallFirst = True
-                        with map_.simulate_one_action(battler, realAction):
-                            enemies = battler.get_enemies_around()
-                            if len(enemies) == 0: # 没有敌人根本不需要预判
-                                _needToBreakWallFirst = False
-                            else:
-                                route1 = battler.get_shortest_attacking_route()
-                                with outer_label() as OUTER_BREAK:
-                                    for enemy in battler.get_enemies_around():
-                                        for action in battler.try_dodge(enemy):
-                                            with map_.simulate_one_action(battler, action):
-                                                route2 = battler.get_shortest_attacking_route() # 只有 route1 为 delay = 0 的选择才可比较
-                                                if route2.length <= route1.length:  # 如果存在着一种闪避方法使得闪避后线路长度可以不超过原线路长度
-                                                    _needToBreakWallFirst = False  # 那么就不破墙
-                                                    raise OUTER_BREAK
-
-                        if _needToBreakWallFirst: # 现在尝试破墙
-                            shootAction = realAction + 4
-                            for field in battler.get_destroyed_fields_if_shoot(shootAction):
-                                if isinstance(field, BrickField):
-                                    if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 的土墙
-                                        if battler.canShoot:
-                                            self.set_status(Status.WAIT_FOR_MARCHING)
-                                            returnAction = shootAction # 不检查安全性
-                                            break
-
-                        if _needToBreakWallFirst: # 需要射击但是前面没有射击，那么就等待
-                            self.set_status(Status.WAIT_FOR_MARCHING)
-                            returnAction = Action.STAY
-                            continue
-
-
-                #
-                # move action 在这之前必须要全部处理完！
-                #
-                #
-                #
-                # 侵略模式下优先射击，如果能够打掉处在最短路线上的墙壁
-                #-------------------
-                if (self.has_status(Status.AGGRESSIVE)
-                    and Action.is_move(realAction)
-                    and battler.canShoot
-                    ):
-                    shootAction = realAction + 4
-                    for field in battler.get_destroyed_fields_if_shoot(shootAction):
-                        if isinstance(field, BrickField) and field.xy in route: # 能够打掉一个处于最短路线上的土墙
-                            action = self.try_make_decision(shootAction)
-                            if Action.is_shoot(action):
-                                self.set_status(Status.KEEP_ON_MARCHING)
-                                realAction = shootAction # 注意：这里修改了 realAction 方便后续判断，但是这是非常不好的一个做法
-                                break
-
-                #
-                # 禁止随便破墙！容易导致自己陷入被动！
-                #
-                if Action.is_shoot(realAction):
-                    #
-                    # 敌人处在墙后的水平路线上，并且与墙的间隔不超过 1 个空格 5cd33a06a51e681f0e91de95
-                    # 事实上 1 个空格是不够的！ 5cd35e08a51e681f0e92182e
-                    #
-                    _shouldStay = False
-
-                    enemy = battler.get_enemy_behind_brick(realAction, interval=-1)
-                    if enemy is not None: # 墙后有人，不能射击
-                        # 否则就等待
-                        #---------------
-                        self.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
-                        self.set_status(Status.WAIT_FOR_MARCHING)
-                        _shouldStay = True
-                    #
-                    # 敌人下一步可能移到墙后面
-                    #
-                    if not _shouldStay:
-                        with outer_label() as OUTER_BREAK:
-                            for oppBattler in [ player.battler for player in self._opponents ]:
-                                if oppBattler.destroyed:
-                                    continue
-                                x1, y1 = oppBattler.xy
-                                for x2, y2 in oppBattler.get_surrounding_empty_field_points():
-                                    moveAction = Action.get_move_action(x1, y1, x2, y2)
-                                    assert map_.is_valid_move_action(oppBattler, moveAction)
-                                    with map_.simulate_one_action(oppBattler, moveAction):
-                                        if battler.get_enemy_behind_brick(realAction, interval=-1) is not None: # 此时如果直接出现在墙的后面
-                                            self.set_status(Status.WAIT_FOR_MARCHING)
-                                            _shouldStay = True
-                                            raise OUTER_BREAK
-
-                    if _shouldStay:
-                        # 先尝试 shoot 转 move
-                        #---------------
-                        if Action.is_shoot(realAction):
-                            moveAction = realAction - 4
-                            action = self.try_make_decision(moveAction)
-                            if Action.is_move(action):
-                                returnAction = action
-                                break
-
-                    if _shouldStay: # 否则 stay
-                        returnAction = Action.STAY
-                        continue
-
-
-                # 否则继续攻击
-                self.set_status(Status.KEEP_ON_MARCHING)
-                returnAction = realAction
-                raise OUTER_BREAK
-
-            # endfor
-        # endwith
-
-        # 找到一个侵略性的行为
-        if not Action.is_stay(returnAction):
-            return returnAction
-
-        # 否则返回 STAY
-        self.set_status(Status.WAIT_FOR_MARCHING)
-        return Action.STAY
+        return action
 
 #{ END 'player.py' }#
 
@@ -5095,6 +3741,1459 @@ class Tank2Team(Team):
         return [ action1, action2 ]
 
 #{ END 'team.py' }#
+
+
+
+#{ BEGIN 'decision/abstract.py' }#
+
+class DecisionMaker(object):
+    """
+    决策者的抽象基类
+    ----------------
+
+    其具体派生类对特定的决策代码段进行封装
+    实现对决策逻辑的拆分
+    以此尝试提高决策树的清晰度，提高决策逻辑的复用性
+
+    """
+
+
+    def __init__(self, *args, **kwargs):
+        if self.__class__ is __class__:
+            raise NotImplementedError
+
+    def _make_decision(self):
+        """
+        真正用于被派生类重载的抽象决策接口
+        """
+        raise NotImplementedError
+
+    def make_decision(self):
+        """
+        [final] 决策接口，统一返回结果
+        -----------------------------------
+
+        - 如果真正的决策函数返回了一个有效的 action ，则将其作为最终结果直接返回
+
+        - 如果返回结果为 None ，即决策函数判断到结尾，仍然没有找到任何一个合适于当前情况的行为
+        则最终结果返回 INVALID action
+
+        """
+        res = self._make_decision()
+        if isinstance(res, int): # 由 return 语句指定的返回值
+            action = res
+            return action
+        elif isinstance(res, (tuple, list)): # 带信号的返回值
+            assert len(res) == 2
+            action, signal = res
+            return ( action, signal ) # 直接返回无需教研
+        elif res is None: # 空返回值
+            action = Action.INVALID
+            return action
+
+
+class SingleDecisionMaker(DecisionMaker):
+    """
+    单人决策者的抽象基类，用于 Tank2Player 的个人决策
+
+    """
+    def __init__(self, player, signal, **kwargs):
+        """
+        重写的构造函数，确保与 Tank2Player._make_decision 接口的参数列表一致
+
+        Input:
+            - player   Tank2Player   单人玩家实例
+            - signal   int           团队信号
+
+        """
+        self._player = player
+        self._signal = signal
+
+        if self.__class__ is __class__:
+            raise NotImplementedError
+
+#{ END 'decision/abstract.py' }#
+
+
+
+#{ BEGIN 'decision/chain.py' }#
+
+class DecisionChain(DecisionMaker):
+    """
+    决策链
+    -------------
+
+    效仿责任链模式，对多个决策实例进行组合，按优先级顺序依次进行决策
+    如果遇到一个符合条件的决策，则将其决策结果返回，否则继续尝试低优先级的决策
+
+    """
+    def __init__(self, *decisions):
+        self._decisions = decisions
+        for decision in self._decisions: # 确保所有的 decision 实例均为 DecisionMaker 的派生
+            assert isinstance(decision, DecisionMaker)
+
+    def _make_decision(self):
+        for decision in self._decisions:
+            action = decision.make_decision()
+            if not ( isinstance(action, int) and not Action.is_valid(action) ):
+                return action
+
+#{ END 'decision/chain.py' }#
+
+
+
+#{ BEGIN 'decision/single/attack_base.py' }#
+
+class AttackBaseDecision(SingleDecisionMaker):
+    """
+    特殊情况决策，当下一步就要拆掉敌方基地时
+
+    """
+    def _make_decision(self):
+
+        player  = self._player
+        battler = player._battler
+
+        if battler.is_face_to_enemy_base() and battler.canShoot:
+            player.set_status(Status.READY_TO_ATTACK_BASE) # 特殊状态
+            return battler.get_next_attack_action() # 必定是射击 ...
+
+#{ END 'decision/single/attack_base.py' }#
+
+
+
+#{ BEGIN 'decision/single/encount_enemy.py' }#
+
+class EncountEnemyDecision(SingleDecisionMaker):
+    """
+    遭遇敌人时的决策
+
+    """
+    def _make_decision(self):
+
+        player = self._player
+
+        map_ = player._map
+        tank = player.tank
+        battler = player.battler
+
+        aroundEnemies = battler.get_enemies_around()
+        if len(aroundEnemies) > 0:
+            player.set_status(Status.ENCOUNT_ENEMY)
+            if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
+                assert len(aroundEnemies) == 2
+                # 首先判断是否为真正的双人夹击
+                enemy1, enemy2 = aroundEnemies
+                x, y = tank.xy
+                x1, y1 = enemy1.xy
+                x2, y2 = enemy2.xy
+                if x1 == x2 == x:
+                    if (y > y1 and y > y2) or (y < y1 and y < y2):
+                        player.set_status(Status.ENCOUNT_ONE_ENEMY)
+                        pass # 实际可视为一个人
+                elif y1 == y2 == y:
+                    if (x > x1 and x > x2) or (x < x1 and x < x2):
+                        player.set_status(Status.ENCOUNT_ONE_ENEMY)
+                        pass
+                else: # 真正的被夹击
+                    player.set_status(Status.ENCOUNT_TWO_ENEMY)
+                    oppBattlers = [ BattleTank(_enemy) for _enemy  in aroundEnemies ]
+                    if all( oppBattler.canShoot for oppBattler in oppBattlers ):
+                        # 如果两者都有弹药，可能要凉了 ...
+                        player.set_status(Status.DYING)
+                        if battler.canShoot:
+                            # TODO: 这种情况下有选择吗？
+                            player.set_status(Status.READY_TO_FIGHT_BACK)
+                            return battler.shoot_to(enemy1) # 随便打一个？
+                    elif all( not oppBattler.canShoot for oppBattler in oppBattlers ):
+                        # 均不能进攻的话，优先闪避到下回合没有敌人的位置（优先考虑拆家方向）
+                        firstMoveAction = tuple()
+                        attackAction = battler.get_next_attack_action()
+                        if Action.is_move(attackAction): # 如果是移动行为
+                            firstMoveAction = ( attackAction, )
+                        for action in firstMoveAction + Action.MOVE_ACTIONS:
+                            if map_.is_valid_move_action(tank, action):
+                                with map_.simulate_one_action(tank, action):
+                                    if len( battler.get_enemies_around() ) < 2: # 一个可行的闪避方向
+                                        player.set_status(Status.READY_TO_DODGE)
+                                        return action
+                        # 均不能闪避，应该是处在狭道内，则尝试任意攻击一个
+                        if battler.canShoot:
+                            # TODO: 是否有选择？
+                            player.set_status(Status.READY_TO_FIGHT_BACK)
+                            return battler.shoot_to(enemy1) # 随便打一个
+                    else: # 有一个能射击，则反击他
+                        for oppBattler in oppBattlers:
+                            if oppBattler.canShoot: # 找到能射击的敌人
+                                actions = battler.try_dodge(oppBattler)
+                                if len(actions) == 0: # 不能闪避
+                                    if battler.canShoot:
+                                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                                        return battler.shoot_to(oppBattler)
+                                    else: # 要凉了 ...
+                                        break
+                                elif len(actions) == 1:
+                                    action = player.try_make_decision(actions[0])
+                                else:
+                                    action = player.try_make_decision(actions[0],
+                                                player.try_make_decision(actions[1]))
+                                if Action.is_move(action): # 统一判断
+                                    player.set_status(Status.READY_TO_DODGE)
+                                    return action
+                                # 没有办法？尝试反击
+                                if battler.canShoot:
+                                    player.set_status(Status.READY_TO_FIGHT_BACK)
+                                    return battler.shoot_to(oppBattler)
+                                else: # 要凉了
+                                    break
+                        # 没有办法对付 ..
+                        player.set_status(Status.DYING)
+                    # 无所谓的办法了...
+                    return player.try_make_decision(battler.get_next_attack_action())
+
+            # TODO:
+            #   虽然说遇到了两个一条线上的敌人，但是这不意味着后一个敌人就没有威胁 5ccee460a51e681f0e8e5b17
+
+
+            # 当前情况：
+            # ---------
+            # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
+            # 2. 敌人数量为 1
+            if len(aroundEnemies) == 1:
+                oppTank = aroundEnemies[0]
+            else: # len(aroundEnemies) == 2:
+                oppTank = battler.get_nearest_enemy()
+            oppBattler = BattleTank(oppTank)
+
+            # 根据当时的情况，评估侵略性
+            status = evaluate_aggressive(battler, oppBattler)
+            player.set_status(status)
+
+            # 侵略模式/僵持模式
+            #----------
+            # 1. 优先拆家
+            # 2. 只在必要的时刻还击
+            # 3. 闪避距离不宜远离拆家路线
+            #
+            if status == Status.AGGRESSIVE or status == Status.STALEMENT:
+                if not oppBattler.canShoot:
+                    # 如果能直接打死，那当然是不能放弃的！！
+                    if len( oppBattler.try_dodge(battler) ) == 0: # 必死
+                        if battler.canShoot:
+                            player.set_status(Status.READY_TO_KILL_ENEMY)
+                            return battler.shoot_to(oppBattler)
+
+                    attackAction = battler.get_next_attack_action() # 其他情况，优先进攻，不与其纠缠
+                    realAction = player.try_make_decision(attackAction) # 默认的进攻路线
+                    if Action.is_stay(realAction): # 存在风险
+                        if Action.is_move(attackAction):
+                            #
+                            # 原本移动或射击，因为安全风险而变成停留，这种情况可以尝试射击，充分利用回合数
+                            #
+                            # TODO:
+                            #   实际上，很多时候最佳路线选择从中线进攻，但从两侧进攻也是等距离的，
+                            #   在这种情况下，由于采用从中线的进攻路线，基地两侧的块并不落在线路上，因此会被
+                            #   忽略，本回合会被浪费。但是进攻基地两侧的块往往可以减短路线。因此此处值得进行
+                            #   特殊判断
+                            #
+                            fields = battler.get_destroyed_fields_if_shoot(attackAction)
+                            route = battler.get_shortest_attacking_route()
+                            for field in fields:
+                                if route.has_block(field): # 为 block 对象，该回合可以射击
+                                    action = player.try_make_decision(battler.shoot_to(field))
+                                    if Action.is_shoot(action):
+                                        player.set_status(Status.PREVENT_BEING_KILLED)
+                                        player.set_status(Status.KEEP_ON_MARCHING)
+                                        return action
+                            # TODO: 此时开始判断是否为基地外墙，如果是，则射击
+                            for field in fields:
+                                if battler.check_is_outer_wall_of_enemy_base(field):
+                                    action = player.try_make_decision(battler.shoot_to(field))
+                                    if Action.is_shoot(action):
+                                        player.set_status(Status.PREVENT_BEING_KILLED)
+                                        player.set_status(Status.KEEP_ON_MARCHING)
+                                        return action
+
+                        # 刚刚对射为两回合，尝试打破对射僵局
+                        #--------------------------------
+                        # 1. 当前为侵略性的，并且在对方地盘，尝试回退一步，与对方重叠。后退操作必须要有限制 5cd10315a51e681f0e900fa8
+                        # 2. 可以考虑往远处闪避，创造机会
+                        #
+                        if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=3)
+                            and battler.is_in_enemy_site()         # 添加必须在对方地盘的限制，避免在我方地盘放人
+                            and player.has_status(Status.AGGRESSIVE) # 只有侵略性的状态可以打破僵局
+                            ):
+                            # 尝试背离敌人
+                            #---------------
+                            backMoveAction = battler.back_away_from(oppBattler)
+                            action = player.try_make_decision(backMoveAction)
+                            if Action.is_move(action):
+                                player.set_status(Status.READY_TO_BACK_AWAY)
+                                return action
+
+                            # 尝试闪避敌人
+                            #---------------
+                            # 此处需要注意的是，如果能够按近路闪避，那么在射击回合早就闪走了
+                            # 所以这里只可能是往远处闪避
+                            #
+                            for action in battler.try_dodge(oppBattler):
+                                if Action.is_move(action):
+                                    realAction = player.try_make_decision(action)
+                                    if Action.is_move(realAction):
+                                        player.set_status(Status.READY_TO_DODGE)
+                                        # 这里还是再判断一下距离
+                                        route1 = battler.get_shortest_attacking_route()
+                                        with map_.simulate_one_action(battler, action):
+                                            route2 = battler.get_shortest_attacking_route()
+                                            if route2.length > route1.length:
+                                                player.set_status(Status.WILL_DODGE_TO_LONG_WAY)
+                                        return realAction
+
+                        # 如果之前是对射，在这里需要延续一下对射状态
+                        if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
+                            and not battler.canShoot    # 但是我方本回合不能射击
+                            and not oppBattler.canShoot # 并且对方本回合不能射击
+                            ):
+                            player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射状态，用于后方打破僵持
+
+                        # 其余情况照常
+                        player.set_status(Status.PREVENT_BEING_KILLED)
+                        return realAction
+                    # 否则不予理会，直接移动或者反击
+                    action = player.try_make_decision(battler.get_next_attack_action())
+                    if not Action.is_stay(action):
+                        # 补丁
+                        #----------------------------
+                        # 针对两者距离为 2 的情况，不能一概而论！
+                        #
+                        if status == Status.STALEMENT: # 僵持模式考虑堵路
+                            _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                            if _route.is_not_found():
+                                _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                            assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
+                            assert _route.length > 0, "unexpected overlapping enemy"
+                            if _route.length == 2:
+                                if not player.is_suitable_to_overlap_with_enemy(oppBattler): # 更适合堵路
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return Action.STAY
+                        # 其他情况均可以正常移动
+                        player.set_status(Status.KEEP_ON_MARCHING)
+                        return action
+                    #  不能移动，只好反击
+                    action = player.try_make_decision(battler.shoot_to(oppBattler))
+                    if Action.is_shoot(action):
+                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                        return action
+                else:
+                    # 对方有炮弹，需要分情况 5ccb3ce1a51e681f0e8b4de1
+                    #-----------------------------
+                    # 1. 如果是侵略性的，则优先闪避，并且要尽量往和进攻路线方向一致的方向闪避，否则反击
+                    # 2. 如果是僵持的，那么优先堵路，类似于 Defensive
+                    #
+                    # TODO:
+                    #   可能需要团队信号协调 5ccc30f7a51e681f0e8c1668
+                    #
+                    if status == Status.STALEMENT:
+                        #
+                        # 首先把堵路的思路先做了，如果不能射击，那么同 aggressive
+                        #
+                        # TODO:
+                        #   有的时候这并不是堵路，而是在拖时间！ 5ccf84eca51e681f0e8ede59
+
+                        # 上一回合保持重叠，但是却被敌人先过了，这种时候不宜僵持，应该直接走人
+                        # 这种情况下直接转为侵略模式！
+                        #
+                        if (player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                            and (player.has_status_in_previous_turns(Status.READY_TO_BLOCK_ROAD, turns=1)
+                                or player.has_status_in_previous_turns(Status.KEEP_ON_OVERLAPPING, turns=1))
+                            ):
+                            pass # 直接过到侵略模式
+                        else: # 否则算作正常的防守
+                            if battler.canShoot:
+                                player.set_status(Status.READY_TO_BLOCK_ROAD, Status.READY_TO_FIGHT_BACK)
+                                if battler.get_manhattan_distance_to(oppBattler) == 1:
+                                    player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射
+                                return battler.shoot_to(oppBattler)
+
+                    # 闪避，尝试找最佳方案
+                    #-------------------------
+                    defenseAction = Action.STAY
+                    if battler.canShoot:
+                        defenseAction = battler.shoot_to(oppBattler)
+                    actions = battler.try_dodge(oppTank)
+                    attackAction = battler.get_next_attack_action()
+                    for action in actions: # 与进攻方向相同的方向是最好的
+                        if Action.is_move(action) and Action.is_same_direction(action, attackAction):
+                            realAction = player.try_make_decision(action) # 风险评估
+                            if Action.is_move(realAction):
+                                player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                return realAction # 闪避加行军
+
+                    # 没有最佳的闪避方案，仍然尝试闪避
+                    #-----------------------------
+                    # 但是不能向着增加攻击线路长短的方向闪避！
+                    #
+                    route1 = battler.get_shortest_attacking_route()
+                    for action in actions:
+                        if Action.is_move(action):
+                            realAction = player.try_make_decision(action)
+                            if Action.is_move(realAction):
+                                with map_.simulate_one_action(battler, action):
+                                    route2 = battler.get_shortest_attacking_route()
+                                if route2.length > route1.length: # 不能超过当前路线长度，否则就是浪费一回合
+                                    continue
+                                else:
+                                    player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                    return realAction
+
+                    # 没有不能不导致路线编程的办法，如果有炮弹，那么优先射击！
+                    # 5ccef443a51e681f0e8e64d8
+                    #-----------------------------------
+                    if Action.is_shoot(defenseAction):
+                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                        if battler.get_manhattan_distance_to(oppBattler) == 1:
+                            player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY)
+                        return defenseAction
+
+                    # 如果不能射击，那么终究还是要闪避的
+                    # 或者是无法后方移动，为了打破僵局，尝试闪避
+                    #----------------------------------
+                    for action in actions:
+                        if Action.is_move(action):
+                            realAction = player.try_make_decision(action)
+                            if Action.is_move(realAction):
+                                player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                #
+                                # 因为这种情况很有可能会出现死循环 5cd009e0a51e681f0e8f3ffb
+                                # 为了后续能够打破这种情况，这里额外添加一个状态进行标记
+                                #
+                                player.set_status(Status.WILL_DODGE_TO_LONG_WAY)
+                                return realAction
+
+                    player.set_status(Status.DYING) # 否则就凉了 ...
+                    return defenseAction
+
+                return Action.STAY
+
+
+            # 防御模式
+            #----------
+            # 1. 如果对方下回合必死，那么射击
+            # 2. 优先堵路，距离远则尝试逼近
+            # 3. 必要的时候对抗
+            # 4. 距离远仍然优先
+            #
+            # elif status == DEFENSIVE_STATUS:
+            else: # status == DEFENSIVE_STATUS or status == STALEMATE_STATUS:
+                # attackAction = self.try_make_decision(battler.get_next_attack_action()) # 默认的侵略行为
+
+                if not oppBattler.canShoot:
+
+                    if len( oppBattler.try_dodge(battler) ) == 0:
+                        if battler.canShoot: # 必死情况
+                            player.set_status(Status.READY_TO_KILL_ENEMY)
+                            return battler.shoot_to(oppBattler)
+                    #
+                    # 不能马上打死，敌人又无法攻击
+                    #-------------------------------
+                    # 优先堵路，根据双方距离判断
+                    #
+                    _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                    if _route.is_not_found():
+                        _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                    assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
+                    assert _route.length > 0, "unexpected overlapping enemy"
+
+                    if _route.length == 1: # 双方相邻，选择等待
+
+                        # 此处首先延续一下对射状态
+                        if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
+                            and not battler.canShoot    # 但是我方本回合不能射击
+                            and not oppBattler.canShoot # 并且对方本回合不能射击
+                            ):
+                            player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射状态，用于后方打破僵持
+
+                        player.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return Action.STAY
+                    elif _route.length > 2: # 和对方相隔两个格子以上
+                        if player.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全逼近
+                            action = battler.move_to(oppBattler)
+                            player.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路 ...
+                            return action
+                        else:
+                            player.set_status(Status.READY_TO_BLOCK_ROAD)
+                            return Action.STAY # 否则只好等额爱
+                    else: # _route.length == 2:
+                        # 相距一个格子，可以前进也可以等待，均有风险
+                        #----------------------------------------
+                        # 1. 如果对方当前回合无法闪避，下一回合最多只能接近我
+                        #    - 如果对方下回合可以闪避，那么我现在等待是意义不大的，不如直接冲上去和他重叠
+                        #    - 如果对方下回合仍然不可以闪避，那么我就选择等待，反正它也走不了
+                        # 2. 如果对方当前回合可以闪避，那么默认冲上去和他重叠
+                        #    - 如果我方可以射击，那么对方应该会判定为闪避，向两旁走，那么我方就是在和他逼近
+                        #    - 如果我方不能射击，对方可能会选择继续进攻，如果对方上前和我重叠，就可以拖延时间
+                        #
+                        # TODO:
+                        #    好吧，这里的想法似乎都不是很好 ...
+                        #    能不防御就不防御，真理 ...
+                        #
+                        """if len( oppBattler.try_dodge(battler) ) == 0:
+                            # 对手当前回合不可闪避，当然我方现在也不能射击。现在假设他下一步移向我
+                            action = oppBattler.move_to(battler) # 对方移向我
+                            if map_.is_valid_move_action(oppBattler, action):
+                                map_.simulate_one_action(oppBattler, action) # 提交模拟
+                                if len( oppBattler.try_dodge(battler) ) == 0:
+                                    # 下回合仍然不可以闪避，说明可以堵路
+                                    map_.revert()
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return Action.STAY
+                                map_.revert()
+                                # 否则直接冲上去
+                                if player.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全移动
+                                    moveAction = battler.move_to(oppBattler)
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD) # 可以认为在堵路
+                                    return moveAction
+                                else: # 冲上去不安全，那就只能等到了
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return Action.STAY
+                        else:
+                            # 对手当前回合可以闪避，那么尝试冲上去和他重叠
+                            # TODO:
+                            #   可能弄巧成拙 5cca97a4a51e681f0e8ad227
+                            #
+                            #   这个问题需要再根据情况具体判断！
+                            #
+                            '''
+                            if player.is_safe_to_close_to_this_enemy(oppBattler): # 可以安全重叠
+                                moveAction = battler.move_to(oppBattler)
+                                player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                return moveAction
+                            else: # 有风险，考虑等待
+                                player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                return Action.STAY
+                            '''
+                            #
+                            # TODO:
+                            #   是否应该根据战场情况进行判断，比如停下来堵路对方一定无法走通？
+                            #
+                            #   假设自己为钢墙然后搜索对方路径？
+                            #
+                            player.set_status(Status.READY_TO_BLOCK_ROAD)
+                            return Action.STAY"""
+                        player.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return Action.STAY # 似乎没有比这个这个更好的策略 ...
+                # 对方可以射击
+                else:
+                    if battler.canShoot: # 优先反击
+                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                        if battler.get_manhattan_distance_to(oppBattler) == 1:   # 贴脸
+                            player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 触发对射状态
+                        return battler.shoot_to(oppBattler)
+                    # 不能反击，只好闪避
+                    actions = battler.try_dodge(oppBattler)
+                    if len(actions) == 0:
+                        player.set_status(Status.DYING) # 凉了 ...
+                        action = Action.STAY
+                    elif len(actions) == 1:
+                        action = player.try_make_decision(actions[0])
+                    else: # len(actions) == 2:
+                        action = player.try_make_decision(actions[0],
+                                        player.try_make_decision(actions[1]))
+                    if Action.is_move(action): # 统一判断
+                        player.set_status(Status.READY_TO_DODGE)
+                        return action
+                    # 否则就凉了 ...
+                    player.set_status(Status.DYING)
+
+                return Action.STAY
+
+            # 僵持模式？
+            #--------------
+            # 双方进攻距离相近，可能持平
+            # # TODO:
+            #   观察队友？支援？侵略？
+            # 1. 优先防御
+            # 2. ....
+            #
+            # elif status == STALEMATE_STATUS:
+
+#{ END 'decision/single/encount_enemy.py' }#
+
+
+
+#{ BEGIN 'decision/single/overlapping.py' }#
+
+class OverlappingDecision(SingleDecisionMaker):
+    """
+    与敌人重合时的决策
+    """
+    def _make_decision(self):
+
+        player      = self._player
+        Tank2Player = type(player)
+
+        signal  = self._signal
+        map_    = player._map
+        tank    = player.tank
+        battler = player.battler
+
+
+        # (inserted) 主动打破重叠的信号
+        #------------------------------
+        # 1. 如果是侵略模式，则主动前进/射击
+        # 2. 如果是防御模式，则主动后退
+        # 3. 如果是僵持模式？ 暂时用主动防御逻辑
+        #       TODO:
+        #           因为还没有写出强攻信号，主动攻击多半会失败 ...
+        #
+        if signal == Signal.SUGGEST_TO_BREAK_OVERLAP:
+            player.set_status(Status.ENCOUNT_ENEMY)
+            player.set_status(Status.OVERLAP_WITH_ENEMY)
+            oppTank = battler.get_overlapping_enemy()
+            oppBattler = BattleTank(oppTank)
+            oppPlayer = Tank2Player(oppBattler)
+            status = evaluate_aggressive(battler, oppBattler)
+            player.set_status(status)
+            if status == Status.AGGRESSIVE: # 只有侵略模式才前进
+                action = battler.get_next_attack_action()
+                if Action.is_shoot(action): # 能触发这个信号，保证能射击
+                    player.set_status(Status.READY_TO_BREAK_OVERLAP)
+                    player.set_status(Status.KEEP_ON_MARCHING)
+                    return ( action, Signal.READY_TO_BREAK_OVERLAP )
+                elif Action.is_move(action): # 专门为这个情况写安全性测试
+                    if player.is_safe_to_break_overlap_by_movement(action, oppBattler):
+                        # 没有风险，且已知这个移动是符合地图情况的
+                        player.set_status(Status.READY_TO_BREAK_OVERLAP)
+                        player.set_status(Status.KEEP_ON_MARCHING)
+                        return ( action, Signal.READY_TO_BREAK_OVERLAP )
+                    else:
+                        pass # 这个位置漏下去，让 DEFENSIVE 模式的逻辑继续处理
+                        #player.set_status(Status.KEEP_ON_OVERLAPPING) # 继续保持状态
+                        #return ( Action.STAY, Signal.CANHANDLED )
+
+                else: # 只能等待？ 注定不会到达这里
+                    player.set_status(Status.KEEP_ON_OVERLAPPING) # 继续保持状态
+                    return ( Action.STAY, Signal.CANHANDLED )
+
+            #　非侵略模式，或者侵略模式想要前进但是不安全，那么就往后退堵路
+            #------------------------
+            # 为了防止这种情况的发生 5cd356e5a51e681f0e921453
+            #
+            # 这里不只思考默认的最优路径，而是将所有可能的最优路径都列举出来
+            # 因为默认的最优路径有可能是破墙，在这种情况下我方坦克就不会打破重叠
+            # 这就有可能错失防御机会
+            #
+            # 当然还要注意这种一直跟随和被拖着打的情况 5cd3f56d86d50d05a0083621 / 5ccec5a6a51e681f0e8e46c2
+            #
+            for enemyAttackRoute in oppBattler.get_all_shortest_attacking_routes():
+
+                oppAction = oppBattler.get_next_attack_action(enemyAttackRoute) # 模拟对方的侵略性算法
+                if Action.is_move(oppAction) or Action.is_shoot(oppAction): # 大概率是移动
+                    # 主要是为了确定方向
+                    oppAction %= 4
+                    #
+                    # 先处理对方跟随我的情况
+                    #--------------------------
+                    # 上回合试图通过移动和对方打破重叠，但是现在还在重叠
+                    # 说明对方跟着我走了一个回合
+                    #
+                    if (player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                        and Action.is_move(player.get_previous_action(back=1))
+                        ):
+                        oppPlayer.add_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
+
+
+                    if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
+                        and battler.canShoot # 这回合可以射击，则改为射击
+                        ):
+                        player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                        Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
+                        return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
+
+                    # 检查是否可以安全打破重叠
+                    #--------------------------
+                    if player.is_safe_to_break_overlap_by_movement(oppAction, oppBattler):
+                        player.set_status(Status.READY_TO_BREAK_OVERLAP)
+                        player.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return ( oppAction, Signal.READY_TO_BREAK_OVERLAP )
+
+            else: # 否则选择等待
+                player.set_status(Status.KEEP_ON_OVERLAPPING)
+                return ( Action.STAY, Signal.CANHANDLED )
+
+
+        # 与敌人重合时，一般只与一架坦克重叠
+        #--------------------------
+        # 1. 根据路线评估侵略性，确定采用进攻策略还是防守策略
+        # 2.
+        #
+        if battler.has_overlapping_enemy():
+            player.set_status(Status.ENCOUNT_ENEMY)
+            player.set_status(Status.OVERLAP_WITH_ENEMY)
+            oppTank = battler.get_overlapping_enemy()
+            oppBattler = BattleTank(oppTank)
+            oppPlayer = Tank2Player(oppBattler)
+
+            # 评估进攻路线长度，以确定采用保守策略还是入侵策略
+            status = evaluate_aggressive(battler, oppBattler)
+            player.set_status(status)
+
+            # 侵略模式
+            #-----------
+            # 1. 直奔对方基地，有机会就甩掉敌人
+            #
+            if status == Status.AGGRESSIVE:
+                if not oppBattler.canShoot: # 对方不能射击，对自己没有风险
+                    # 尝试继续行军
+                    action = battler.get_next_attack_action()
+                    if Action.is_move(action): # 下一步预计移动
+                        realAction = player.try_make_decision(action)
+                        if Action.is_move(realAction): # 继续起那就
+                            player.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                        # 否则就是等待了，打得更有侵略性一点，可以尝试向同方向开炮！
+                        realAction = player.try_make_decision(action + 4)
+                        if Action.is_shoot(realAction):
+                            player.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                    elif Action.is_shoot(action): # 下一步预计射击
+                        realAction = player.try_make_decision(action)
+                        if Action.is_shoot(realAction):
+                            player.set_status(Status.KEEP_ON_MARCHING)
+                            return realAction
+                    else: # 否则停留
+                        player.set_status(Status.KEEP_ON_OVERLAPPING) # 可能触发 Signal.SUGGEST_TO_BREAK_OVERLAP
+                        return Action.STAY
+                else:
+                    # TODO: 根据历史记录分析，看看是否应该打破僵局
+                    return Action.STAY # 原地等待
+
+            # 防御模式
+            #------------
+            # 1. 尝试回退堵路
+            # 2. 不行就一直等待
+            #   # TODO:
+            #       还需要根据战场形势分析 ...
+            #
+            #elif status == DEFENSIVE_STATUS:
+            else:
+                # 先检查对方上回合是否在跟随我移动
+                #-------------------------------
+                if (player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                    and Action.is_move(player.get_previous_action(back=1))
+                    ):
+                    oppPlayer.add_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
+
+                if not oppBattler.canShoot: # 对方不能射击，对自己没有风险，那么就回头堵路！
+                    #
+                    # 假设对方采用相同的侵略性算法
+                    #
+                    oppAction = oppBattler.get_next_attack_action()
+                    if Action.is_move(oppAction): # 大概率是移动
+
+                        # 首先先检查对方是否会跟随我，优先击杀
+                        #--------------------------
+                        if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
+                            and battler.canShoot # 这回合可以射击，则改为射击
+                            ):
+                            player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                            Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
+                            return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
+
+                        # 正常情况下选择堵路
+                        #----------------------
+                        if player.is_safe_to_break_overlap_by_movement(oppAction, oppBattler): # 模仿敌人的移动方向
+                            player.set_status(Status.READY_TO_BLOCK_ROAD) # 认为在堵路
+                            return oppAction
+
+                # 否则等待
+                player.set_status(Status.READY_TO_BLOCK_ROAD)
+                return Action.STAY
+
+            # 僵持模式
+            #------------
+            #elif status == STALEMATE_STATUS:
+            #    raise NotImplementedError
+
+            # TODO:
+            #   more strategy ?
+            #
+            #   - 追击？
+            #   - 敌方基地在眼前还可以特殊处理，比如没有炮弹默认闪避
+
+#{ END 'decision/single/overlapping.py' }#
+
+
+
+#{ BEGIN 'decision/single/base_defense.py' }#
+
+class BaseDefenseDecision(SingleDecisionMaker):
+    """
+    主动防守基地
+    -----------------
+
+    现在没有和敌人正面相遇
+    在进入主动防御和行军之前，首先先处理一种特殊情况
+
+    在敌人就要攻击我方基地的情况下，应该优先移动，而非预判击杀
+    这种防御性可能会带有自杀性质
+
+    1. 如果敌人当前回合炮弹冷却，下一炮就要射向基地，如果我方坦克下一步可以拦截
+       那么优先移动拦截，而非防御
+
+    2. 如果敌人当前回合马上可以开盘，那么仍然考虑拦截（自杀性）拦截，可以拖延时间
+       如果此时另一个队友还有两步就拆完了，那么我方就有机会胜利
+
+    """
+    def _make_decision(self):
+
+        player  = self._player
+        map_    = player._map
+        tank    = player.tank
+        battler = player.battler
+
+        for oppBattler in [ _oppPlayer.battler for _oppPlayer in player.opponents ]:
+            if oppBattler.is_face_to_enemy_base(): # 面向基地
+                if oppBattler.canShoot: # 敌方可以射击，我方如果一步内可以拦截，则自杀性防御
+                    for action in Action.MOVE_ACTIONS: # 尝试所有可能的移动情况
+                        if map_.is_valid_move_action(tank, action):
+                            with map_.simulate_one_action(tank, action):
+                                if not oppBattler.is_face_to_enemy_base(): # 此时不再面向我方基地，为正确路线
+                                    player.set_status(Status.SACRIFICE_FOR_OUR_BASE)
+                                    return action
+                else: # 敌方不可射击
+                    for action in Action.MOVE_ACTIONS: # 敌方不能射击，我方尝试移动两步
+                        if map_.is_valid_move_action(tank, action):
+                            with map_.simulate_one_action(tank, action):
+                                if not oppBattler.is_face_to_enemy_base(): # 一步防御成功
+                                    player.set_status(Status.BLOCK_ROAD_FOR_OUR_BASE)
+                                    return action
+                                else: # 尝试第二步
+                                    if map_.is_valid_move_action(tank, action):
+                                        with map_.simulate_one_action(tank, action):
+                                            if not oppBattler.is_face_to_enemy_base(): # 两步防御成功
+                                                player.set_status(Status.SACRIFICE_FOR_OUR_BASE)
+                                                return action # 当前回合先移动一步，下回合则在此处按一步判定
+
+#{ END 'decision/single/base_defense.py' }#
+
+
+
+#{ BEGIN 'decision/single/active_defense.py' }#
+
+class ActiveDefenseDecision(SingleDecisionMaker):
+    """
+    主动防御策略
+    -----------------------
+
+    不要追击敌人，而是选择保守堵路策略！
+
+    1. 对于路线差为 2 的情况，选择堵路，而非重叠
+    2. 如果自己正常行军将会射击，那么判断射击所摧毁的块是否为敌人进攻路线上的块
+       如果是，则改为移动或者停止
+
+    """
+
+    ACTIVE_DEFENSE_MIN_TRIGGER_TURNS = 2  # 前两回合结束前不要触发主动防御！
+
+    def _make_decision(self):
+
+        player      = self._player
+        Tank2Player = type(player) # 防止循环引用
+
+        signal  = self._signal
+        map_    = player._map
+        tank    = player.tank
+        battler = player.battler
+
+        oppTank = battler.get_nearest_enemy() # 从路线距离分析确定最近敌人
+        oppBattler = BattleTank(oppTank)
+        status = evaluate_aggressive(battler, oppBattler)
+        player.set_status(status)
+
+        if status == Status.DEFENSIVE:
+            # 避免过早进入 DEFENSIVE 状态
+            #----------------------------
+            currentTurn = map_.turn
+            if currentTurn < __class__.ACTIVE_DEFENSE_MIN_TRIGGER_TURNS:
+                player.remove_status(Status.DEFENSIVE)
+                player.set_status(Status.AGGRESSIVE)   # 前期以侵略性为主
+            else:
+                # 如果是距离为 2, 则选择不重叠，只堵路
+                #------------------------------------
+                _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                if _route.is_not_found():
+                    _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
+                assert _route.length > 0, "unexpected overlapping enemy"
+                if _route.length == 2:
+                    if (
+                            # 可能是主动防御但是为了防止重叠而等待
+                            (
+                                player.has_status_in_previous_turns(Status.ACTIVE_DEFENSIVE, turns=1)
+                                and player.has_status_in_previous_turns(Status.READY_TO_BLOCK_ROAD, turns=1)
+                                and Action.is_stay(player.get_previous_action(back=1))
+                            )
+
+                        or
+                            # 可能是为了防止被杀而停止
+                            (
+                                player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED)
+                                and Action.is_stay(player.get_previous_action(back=1))
+                            )
+
+                        ):
+                        oppPlayer = Tank2Player(oppBattler)
+                        if Action.is_stay(oppPlayer.get_previous_action(back=1)): # 对方上回合在等待
+                            #
+                            # 但是遇到这种情况就非常尴尬 5cd356e5a51e681f0e921453
+                            #
+                            # 需要再判断一下是否有必要上前堵路
+                            #
+                            _shouldMove = False
+                            x1, y1 = oppBattler.xy
+                            x2, y2 = _route[1].xy # 目标位置
+                            enemyAttackRoute = oppBattler.get_shortest_attacking_route()
+                            if (x2, y2) in enemyAttackRoute: # 下一步移动为进攻路线
+                                enemyMoveAction = Action.get_move_action(x1, y1, x2, y2)
+                                with map_.simulate_one_action(oppBattler, enemyMoveAction):
+                                    for enemyDodgeAction in oppBattler.try_dodge(battler): # 如果敌人上前后可以闪避我
+                                        route1 = oppBattler.get_shortest_attacking_route()
+                                        with map_.simulate_one_action(oppBattler, enemyDodgeAction):
+                                            route2 = oppBattler.get_shortest_attacking_route()
+                                            if route2.length <= route1.length: #　并且闪避的路线不是原路返回
+                                                _shouldMove = True
+                                                break
+
+                            #
+                            # 真正的值得堵路的情况
+                            #
+                            if _shouldMove:
+                                x1, y1 = battler.xy
+                                x2, y2 = _route[1].xy # 跳过开头
+                                moveAction = Action.get_move_action(x1, y1, x2, y2)
+                                if map_.is_valid_move_action(battler, moveAction): # 稍微检查一下，应该本来是不会有错的
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    return moveAction
+
+                    #
+                    # 否则选择不要上前和敌人重叠，而是堵路
+                    #
+                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                    return Action.STAY
+
+
+                # 转向寻找和敌方进攻路线相似度更高的路线
+                #--------------------------------------
+                #
+                enemyAttackRoute = oppBattler.get_shortest_attacking_route()
+                _routes = [ route for route in battler.get_all_shortest_attacking_routes(delay=3) ] # 允许 3 步延迟
+                _similarities = [ estimate_route_similarity(r, enemyAttackRoute) for r in _routes ]
+                #debug_print(list(zip(_similarities, _routes)))
+                idx = np.argmax( _similarities ) # 相似度最大的路线
+                closestAttackRoute = _routes[idx]
+
+                #
+                # 判断下一步是否可以出现在敌人的攻击路径之上 5cd31d84a51e681f0e91ca2c
+                #-------------------------------
+                # 如果可以，就移动过去
+                #
+                x1, y1 = battler.xy
+                for x3, y3 in battler.get_surrounding_empty_field_points():
+                    if (x3, y3) in enemyAttackRoute:
+                        moveAction = Action.get_move_action(x1, y1, x3, y3)
+                        assert map_.is_valid_move_action(battler, moveAction)
+                        willMove = False # 是否符合移动的条件
+                        realAction = player.try_make_decision(moveAction)
+                        if Action.is_move(realAction):
+                            willMove = True
+                        elif player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 打破僵局
+                            oppPlayer = Tank2Player(player.get_risk_enemy())
+                            if (oppPlayer.battler.canShoot # 当回合可以射击
+                                and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
+                                ): # 说明敌人大概率不打算攻击我
+                                willMove = True
+                        #
+                        # 符合了移动的条件
+                        # 但是还需要检查移动方向
+                        # 不能向着远离敌人的方向移动，不然就会后退 ... 5cd33351a51e681f0e91da39
+                        #
+                        if willMove:
+                            distance1 = battler.get_manhattan_distance_to(oppBattler)
+                            with map_.simulate_one_action(battler, moveAction):
+                                distance2 = battler.get_manhattan_distance_to(oppBattler)
+                                if distance2 > distance1: # 向着远处移动了
+                                    pass
+                                else:
+                                    # 添加一个限制，必须要移动后出现在敌人的附近
+                                    # 否则约束过弱，容易导致前期乱跑的情况 5cd39434a51e681f0e924128
+                                    #
+                                    for enemy in oppBattler.get_enemies_around():
+                                        if enemy is tank:
+                                            player.set_status(Status.ACTIVE_DEFENSIVE)
+                                            player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                            return moveAction
+
+
+                #
+                # 判断自己的下一步是否为敌人开路
+                #-------------------------
+                # 如果自己下一个行为是射击，然后所射掉的块为敌人进攻路线上的块
+                # 那么将这个动作转为移动或者停止
+                #
+                # TODO:
+                #   这个动作是有条件的，通常认为是，块就处在敌人的周围，我将块打破后
+                #   敌人有炮，我不能马上移到块的，这样就可能让敌人过掉，在这种情况下避免开炮
+                #
+                attackAction = battler.get_next_attack_action(closestAttackRoute)
+                realAction = player.try_make_decision(attackAction)
+                if Action.is_shoot(realAction):
+                    fields = battler.get_destroyed_fields_if_shoot(realAction)
+                    if len(fields) == 1:
+                        field = fields[0]
+                        if isinstance(field, BrickField):
+                            enemyAttackRoute = oppBattler.get_shortest_attacking_route()
+                            if enemyAttackRoute.has_block(field): # 打掉的 Brick 在敌人进攻路线上
+                                #
+                                # 再尝试模拟，是否会导致上述情况
+                                #
+                                # TODO:
+                                #   还需要分析敌人的行为!
+                                #
+                                _dontShoot = False
+
+                                with map_.simulate_one_action(battler, realAction):
+                                    moveAction = realAction - 4
+                                    with map_.simulate_one_action(battler, moveAction): # 再走一步
+                                        # 敌方模拟两步
+                                        with outer_label() as OUTER_BREAK:
+                                            for action in oppBattler.get_all_valid_actions():
+                                                with map_.simulate_one_action(oppBattler, action):
+                                                    for action in oppBattler.get_all_valid_actions():
+                                                        with map_.simulate_one_action(oppBattler, action):
+
+                                                            if battler.destroyed:
+                                                                _dontShoot = True
+                                                            else:
+                                                                for enemy in oppBattler.get_enemies_around():
+                                                                    if enemy is tank:
+                                                                        _dontShoot = True
+                                                            if _dontShoot:
+                                                                raise OUTER_BREAK
+
+                                if _dontShoot:
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    return player.try_make_decision(moveAction) # 移动/停止
+
+                # 否则直接采用主动防御的进攻策略
+                #
+                # TODO:
+                #   这是个糟糕的设计，因为这相当于要和下方的进攻代码重复一遍
+                #
+                if battler.is_in_our_site():  # 只有在我方地盘的时候才触发
+                    #
+                    # 首先实现禁止随便破墙
+                    #
+                    if Action.is_shoot(realAction):
+                        #
+                        # 敌人处在墙后的水平路线上，并且与墙的间隔不超过 1 个空格 5cd33a06a51e681f0e91de95
+                        # 事实上 1 个空格是不够的！ 5cd35e08a51e681f0e92182e
+                        #
+                        enemy = battler.get_enemy_behind_brick(realAction, interval=-1)
+                        if enemy is not None:
+                            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
+                            player.set_status(Status.ACTIVE_DEFENSIVE)
+                            return Action.STAY
+                        #
+                        # 敌人下一步可能移到墙后面
+                        #
+                        x1, y1 = oppBattler.xy
+                        for x2, y2 in oppBattler.get_surrounding_empty_field_points():
+                            moveAction = Action.get_move_action(x1, y1, x2, y2)
+                            assert map_.is_valid_move_action(oppBattler, moveAction)
+                            with map_.simulate_one_action(oppBattler, moveAction):
+                                if battler.get_enemy_behind_brick(realAction, interval=-1) is not None: # 此时如果直接出现在墙的后面
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    return Action.STAY
+
+
+                    if Action.is_stay(realAction):
+                        # (inserted) 主动打破僵局：因为遇到敌人，为了防止被射杀而停留
+                        # 注：
+                        #   这段代码复制自下方的侵略模式
+                        #--------------------------
+                        if Action.is_move(attackAction):
+                            if player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 即将停留第二回合
+                                oppPlayer = Tank2Player(oppBattler)
+                                if (Action.is_move(oppPlayer.get_previous_action(back=1))
+                                    and battler.get_manhattan_distance_to(oppBattler) == 2
+                                    ): # 这种情况对应着对方刚刚到达拐角处，这种情况是有危险性的，因此再停留一回合 5cd4045c86d50d05a00840e1
+                                    pass
+                                elif oppBattler.canShoot: # 当回合可以射击，并且我上回合停留，因此敌人上回合可以射击
+                                    # 说明敌人大概率不打算攻击我
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    return attackAction
+
+                        player.set_status(Status.PREVENT_BEING_KILLED) # 否则标记为防止被杀，用于上面的触发
+
+                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                    return realAction
+
+#{ END 'decision/single/active_defense.py' }#
+
+
+
+#{ BEGIN 'decision/single/marching.py' }#
+
+class MarchingDecision(SingleDecisionMaker):
+    """
+    行军策略
+    -------------------------
+
+    当身边没有和任何敌人正面遭遇的时候，尝试寻找最佳的进攻行为
+
+    1. 进攻
+    2. 不会主动破墙
+    3. 遇到僵局，会在指定回合后自动打破僵局
+    4. 遇到有风险的路径导致需要停止不前的，会考虑寻找相同长度但是安全的路径，并改变方向
+
+
+    团队信号：
+    ----------
+    1. 破墙信号
+    2. 强攻信号
+
+    """
+    def _make_decision(self):
+
+        player      = self._player
+        Tank2Player = type(player)
+
+        signal  = self._signal
+        map_    = player._map
+        tank    = player.tank
+        battler = player.battler
+
+
+        # (inserted) 准备破墙信号
+        #--------------------------
+        # 触发条件：
+        #
+        #   1. 对应于双方对峙，我方开好后路后触发某些条件强制破墙
+        #   2. 对方刚刚从墙后移开，我方存在后路，这个时候强制破墙
+        #
+        # 收到这个信号的时候，首先检查是否可以闪避
+        #
+        #   1. 如果可以闪避，就返回可以破墙的信号
+        #   2. 如果不可以闪避，就返回这回合准备后路的信号
+        #
+        if signal == Signal.PREPARE_FOR_BREAK_BRICK:
+            player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
+            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
+            attackAction = battler.get_next_attack_action()
+            oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
+
+            _undoRevertTurns = 0
+            while oppTank is None: #　对应于敌方刚离开的那种触发条件
+                # 可能存在多轮回滚，因为别人的策略和我们的不一样！
+                # 给别人回滚的时候必须要考虑多回合！
+                map_.revert()
+                _undoRevertTurns += 1
+                oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
+
+            player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
+            assert oppTank is not None
+            dodgeActions = battler.try_dodge(oppTank)
+            if len(dodgeActions) == 0:
+                # 准备凿墙
+                breakBrickActions = battler.break_brick_for_dodge(oppTank)
+                if len(breakBrickActions) == 0: # 两边均不是土墙
+                    res = (  Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
+                else:
+                    player.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
+                    res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
+            else:
+                # 可以闪避，那么回复团队一条消息，下一步是破墙动作
+                shootAction = battler.shoot_to(oppTank)
+                player.set_status(Status.READY_TO_BREAK_BRICK)
+                res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
+
+            for _ in range(_undoRevertTurns):
+                map_.undo_revert()
+
+            return res
+
+        # (inserted) 强攻信号
+        #-------------------------
+        if signal == Signal.FORCED_MARCH:
+            attackAction = battler.get_next_attack_action() # 应该是移动行为，且不需检查安全性
+            player.set_status(Status.READY_TO_FORCED_MARCH)
+            return ( attackAction, Signal.READY_TO_FORCED_MARCH )
+
+
+        returnAction = Action.STAY # 将会返回的行为，默认为 STAY
+        with outer_label() as OUTER_BREAK:
+            for route in battler.get_all_shortest_attacking_routes(): # 目的是找到一个不是停留的动作，避免浪费时间
+
+                # 首先清除可能出现的状态，也就是导致 stay 的状况
+                player.remove_status( Status.WAIT_FOR_MARCHING,
+                                    Status.PREVENT_BEING_KILLED,
+                                    Status.HAS_ENEMY_BEHIND_BRICK )
+
+                attackAction = battler.get_next_attack_action(route)
+                realAction = player.try_make_decision(attackAction)
+                if Action.is_stay(realAction): # 存在风险
+                    if Action.is_move(attackAction):
+
+                        # (inserted) 主动打破僵局：因为遇到敌人，为了防止被射杀而停留
+                        # 注：
+                        #   在上方的主动防御模式里还有一段和这里逻辑基本一致的代码
+                        #--------------------------
+                        if (player.has_status_in_previous_turns(Status.WAIT_FOR_MARCHING, turns=1)
+                            and player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1)
+                            ): # 即将停留第二回合
+                            oppBattler = BattleTank(player.get_risk_enemy())
+                            oppPlayer = Tank2Player(oppBattler)
+                            if (oppBattler.canShoot # 当回合可以射击
+                                and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
+                                ): # 说明敌人大概率不打算攻击我
+                                if (Action.is_move(oppPlayer.get_previous_action(back=1))
+                                    and battler.get_manhattan_distance_to(oppBattler) == 2
+                                    ): # 这种情况对应着对方刚刚到达拐角处，这种情况是有危险性的，因此再停留一回合 5cd4045c86d50d05a00840e1
+                                    pass
+                                else:
+                                    player.set_status(Status.KEEP_ON_MARCHING)
+                                    returnAction = attackAction
+                                    raise OUTER_BREAK
+
+                        # 原本的移动，现在变为停留
+                        #------------------------
+                        # 停着就是在浪费时间，不如选择进攻
+                        #
+                        fields = battler.get_destroyed_fields_if_shoot(attackAction)
+                        #
+                        # 如果当前回合射击可以摧毁的对象中，包含自己最短路线上的块
+                        # 那么就射击
+                        #
+                        for field in fields:
+                            if route.has_block(field): # 为 block 对象，该回合可以射击
+                                action = player.try_make_decision(battler.shoot_to(field))
+                                if Action.is_shoot(action):
+                                    # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
+                                    player.set_status(Status.WAIT_FOR_MARCHING)
+                                    player.set_status(Status.PREVENT_BEING_KILLED)
+                                    returnAction = action
+                                    raise OUTER_BREAK
+                        #
+                        # 如果能摧毁的是基地外墙，仍然选择攻击
+                        # 因为在攻击后可能可以给出更加短的路线
+                        #
+                        for field in fields:
+                            if battler.check_is_outer_wall_of_enemy_base(field):
+                                action = player.try_make_decision(battler.shoot_to(field))
+                                if Action.is_shoot(action):
+                                    # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
+                                    player.set_status(Status.WAIT_FOR_MARCHING)
+                                    player.set_status(Status.PREVENT_BEING_KILLED)
+                                    returnAction = action
+                                    raise OUTER_BREAK
+
+                        #
+                        # 如果不能摧毁和地方基地周围的墙，但是可以摧毁与自己中间相差一格的墙，那么仍然选择攻击
+                        # 这种情况多半属于，如果当前回合往前走一步，可能被垂直方向的敌人射杀，因为不敢前进
+                        # 在多回合后，我方可能会主动突破这种僵持情况。在我方主动向前一步的时候，敌人将可以
+                        # 射击我方坦克。如果前方有一个空位，那么我方坦克就可以闪避到前方的空位上，从而继续前进。
+                        # 如果这个位置本来是个砖块，但是没有预先摧毁，我方坦克在突击后就只能选择原路闪回，
+                        # 那么就可能出现僵局
+                        # 因此这里预先摧毁和自己相差一格的土墙，方便后续突击
+                        #
+                        # 如果是防御状态，那么不要随便打破墙壁！ 5cd31d84a51e681f0e91ca2c
+                        #
+                        if (not player.has_status(Status.DEFENSIVE)  # 防御性无效
+                            and battler.is_in_enemy_site()  # 只有在对方基地的时候才有效
+                            ):
+                            for field in fields:
+                                if isinstance(field, BrickField):
+                                    if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 相当于土墙
+                                        action = player.try_make_decision(battler.shoot_to(field))
+                                        if Action.is_shoot(action):
+                                            # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
+                                            player.set_status(Status.WAIT_FOR_MARCHING)
+                                            player.set_status(Status.PREVENT_BEING_KILLED)
+                                            returnAction = action
+                                            raise OUTER_BREAK
+
+
+                    elif Action.is_shoot(attackAction):
+                        # 如果为射击行为，检查是否是墙后敌人造成的
+                        enemy = battler.get_enemy_behind_brick(attackAction)
+                        if enemy is not None:
+                            player.set_risk_enemy(BattleTank(enemy)) # 额外指定一下，确保是这个敌人造成的
+                            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
+
+
+                    # 否则停止不前
+                    # 此时必定有 riskyEnemy
+                    #
+                    player.set_status(Status.WAIT_FOR_MARCHING) # 可能触发 Signal.PREPARE_FOR_BREAK_BRICK 和 Signal.FORCED_MARCH
+                    player.set_status(Status.PREVENT_BEING_KILLED) # TODO: 这个状态是普适性的，希望在上面的各种情况中都能补全
+                    returnAction = Action.STAY
+                    continue # 停留动作，尝试继续寻找
+
+                # 对于移动行为，有可能处于闪避到远路又回来的僵局中 5cd009e0a51e681f0e8f3ffb
+                # 因此在这里根据前期状态尝试打破僵局
+                #----------------------------------
+                if (player.has_status_in_previous_turns(Status.WILL_DODGE_TO_LONG_WAY, turns=1) # 说明上回合刚闪避回来
+                    and Action.is_move(realAction) # 然后这回合又准备回去
+                    ):
+                    # TODO:
+                    #   此处是否有必要进一步检查两次遇到的敌人为同一人？
+                    #
+                    #
+                    # 首先考虑前方相距一格处是否有土墙，如果有，那么就凿墙 5cd009e0a51e681f0e8f3ffb
+                    #
+                    fields = battler.get_destroyed_fields_if_shoot(realAction)
+                    for field in fields:
+                        if isinstance(field, BrickField):
+                            if battler.get_manhattan_distance_to(field) == 2:
+                                action = player.try_make_decision(battler.shoot_to(field))
+                                if Action.is_shoot(action):
+                                    player.set_status(Status.KEEP_ON_MARCHING) # 真实体现
+                                    returnAction = action
+                                    raise OUTER_BREAK
+                    # TODO:
+                    #   还可以选择绕路？
+
+
+                #
+                # 预判一步，如果下一步会遇到敌人，并且不得不回头闪避的话，就考虑先摧毁与自己中间相差一格的墙（如果存在）
+                # 类似于主动防御的情况
+                #
+                if Action.is_move(realAction):
+                    if (not player.has_status(Status.DEFENSIVE) #　防御性无效
+                        and battler.is_in_enemy_site()  # 只有在敌方地盘时才有效！
+                        ):
+                        _needToBreakWallFirst = True
+                        with map_.simulate_one_action(battler, realAction):
+                            enemies = battler.get_enemies_around()
+                            if len(enemies) == 0: # 没有敌人根本不需要预判
+                                _needToBreakWallFirst = False
+                            else:
+                                route1 = battler.get_shortest_attacking_route()
+                                with outer_label() as OUTER_BREAK:
+                                    for enemy in battler.get_enemies_around():
+                                        for action in battler.try_dodge(enemy):
+                                            with map_.simulate_one_action(battler, action):
+                                                route2 = battler.get_shortest_attacking_route() # 只有 route1 为 delay = 0 的选择才可比较
+                                                if route2.length <= route1.length:  # 如果存在着一种闪避方法使得闪避后线路长度可以不超过原线路长度
+                                                    _needToBreakWallFirst = False  # 那么就不破墙
+                                                    raise OUTER_BREAK
+
+                        if _needToBreakWallFirst: # 现在尝试破墙
+                            shootAction = realAction + 4
+                            for field in battler.get_destroyed_fields_if_shoot(shootAction):
+                                if isinstance(field, BrickField):
+                                    if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 的土墙
+                                        if battler.canShoot:
+                                            player.set_status(Status.WAIT_FOR_MARCHING)
+                                            returnAction = shootAction # 不检查安全性
+                                            break
+
+                        if _needToBreakWallFirst: # 需要射击但是前面没有射击，那么就等待
+                            player.set_status(Status.WAIT_FOR_MARCHING)
+                            returnAction = Action.STAY
+                            continue
+
+
+                #
+                # move action 在这之前必须要全部处理完！
+                #
+                #
+                #
+                # 侵略模式下优先射击，如果能够打掉处在最短路线上的墙壁
+                #-------------------
+                if (player.has_status(Status.AGGRESSIVE)
+                    and Action.is_move(realAction)
+                    and battler.canShoot
+                    ):
+                    shootAction = realAction + 4
+                    for field in battler.get_destroyed_fields_if_shoot(shootAction):
+                        if isinstance(field, BrickField) and field.xy in route: # 能够打掉一个处于最短路线上的土墙
+                            action = player.try_make_decision(shootAction)
+                            if Action.is_shoot(action):
+                                player.set_status(Status.KEEP_ON_MARCHING)
+                                realAction = shootAction # 注意：这里修改了 realAction 方便后续判断，但是这是非常不好的一个做法
+                                break
+
+                #
+                # 禁止随便破墙！容易导致自己陷入被动！
+                #
+                if Action.is_shoot(realAction):
+                    #
+                    # 敌人处在墙后的水平路线上，并且与墙的间隔不超过 1 个空格 5cd33a06a51e681f0e91de95
+                    # 事实上 1 个空格是不够的！ 5cd35e08a51e681f0e92182e
+                    #
+                    _shouldStay = False
+
+                    enemy = battler.get_enemy_behind_brick(realAction, interval=-1)
+                    if enemy is not None: # 墙后有人，不能射击
+                        # 否则就等待
+                        #---------------
+                        player.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
+                        player.set_status(Status.WAIT_FOR_MARCHING)
+                        _shouldStay = True
+                    #
+                    # 敌人下一步可能移到墙后面
+                    #
+                    if not _shouldStay:
+                        with outer_label() as OUTER_BREAK:
+                            for oppBattler in [ _oppPlayer.battler for _oppPlayer in player.opponents ]:
+                                if oppBattler.destroyed:
+                                    continue
+                                x1, y1 = oppBattler.xy
+                                for x2, y2 in oppBattler.get_surrounding_empty_field_points():
+                                    moveAction = Action.get_move_action(x1, y1, x2, y2)
+                                    assert map_.is_valid_move_action(oppBattler, moveAction)
+                                    with map_.simulate_one_action(oppBattler, moveAction):
+                                        if battler.get_enemy_behind_brick(realAction, interval=-1) is not None: # 此时如果直接出现在墙的后面
+                                            player.set_status(Status.WAIT_FOR_MARCHING)
+                                            _shouldStay = True
+                                            raise OUTER_BREAK
+
+                    if _shouldStay:
+                        # 先尝试 shoot 转 move
+                        #---------------
+                        if Action.is_shoot(realAction):
+                            moveAction = realAction - 4
+                            action = player.try_make_decision(moveAction)
+                            if Action.is_move(action):
+                                returnAction = action
+                                break
+
+                    if _shouldStay: # 否则 stay
+                        returnAction = Action.STAY
+                        continue
+
+
+                # 否则继续攻击
+                player.set_status(Status.KEEP_ON_MARCHING)
+                returnAction = realAction
+                raise OUTER_BREAK
+
+            # endfor
+        # endwith
+
+        # 找到一个侵略性的行为
+        if not Action.is_stay(returnAction):
+            return returnAction
+
+        # 否则返回 STAY
+        player.set_status(Status.WAIT_FOR_MARCHING)
+        return Action.STAY
+
+#{ END 'decision/single/marching.py' }#
 
 
 

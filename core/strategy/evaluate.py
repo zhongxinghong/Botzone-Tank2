@@ -2,15 +2,15 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 14:54:48
+# @Last Modified time: 2019-05-15 17:20:20
 """
 状况评估
 """
 
 __all__ = [
 
-    "assess_aggressive",
-    "assess_route_similarity",
+    "evaluate_aggressive",
+    "estimate_route_similarity",
 
     ]
 
@@ -21,7 +21,7 @@ from .status import Status
 
 #{ BEGIN }#
 
-def assess_aggressive(battler, oppBattler):
+def evaluate_aggressive(battler, oppBattler):
     """
     根据敌我两架坦克的攻击线路长短，衡量当前侵略性
 
@@ -68,7 +68,7 @@ def assess_aggressive(battler, oppBattler):
             return Status.STALEMENT
 
 
-def assess_route_similarity(route1, route2):
+def estimate_route_similarity(route1, route2):
     """
     评估两条路线的相似度
     一般用于判断选择某条路线是否可以和敌人相遇

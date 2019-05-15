@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:28:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-03 20:49:01
+# @Last Modified time: 2019-05-15 15:47:02
 """
 行为类
 """
@@ -19,9 +19,6 @@ from .utils import debug_print
 #{ BEGIN }#
 
 class Action(object):
-
-    # 推迟决策
-    POSTPONE    = -4 # 用于告知 Team 让队友优先决策
 
     # 空与无效
     DUMMY       = -3 # 额外添加的

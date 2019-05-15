@@ -60,7 +60,7 @@
     },
     {
         "package": "strategy",
-        "file": "../core/strategy/estimate.py"
+        "file": "../core/strategy/evaluate.py"
     },
     {
         "package": "strategy",
@@ -103,6 +103,38 @@
     {
         "package": "",
         "file": "../core/team.py"
+    },
+    {
+        "package": "decision",
+        "file": "../core/decision/abstract.py"
+    },
+    {
+        "package": "decision",
+        "file": "../core/decision/chain.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/attack_base.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/encount_enemy.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/overlapping.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/base_defense.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/active_defense.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/marching.py"
     },
     {
         "package": "",
