@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:03:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 17:27:33
+# @Last Modified time: 2019-05-17 05:36:14
 
 __all__ = [
 
@@ -12,7 +12,7 @@ __all__ = [
 
 from ..abstract import SingleDecisionMaker
 from ...global_ import np
-from ...utils import outer_label
+from ...utils import outer_label, debug_print
 from ...action import Action
 from ...field import BrickField
 from ...tank import BattleTank
@@ -37,6 +37,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
 
     ACTIVE_DEFENSE_MIN_TRIGGER_TURNS = 2  # 前两回合结束前不要触发主动防御！
 
+
     def _make_decision(self):
 
         player      = self._player
@@ -49,6 +50,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
 
         oppTank = battler.get_nearest_enemy() # 从路线距离分析确定最近敌人
         oppBattler = BattleTank(oppTank)
+        oppPlayer = Tank2Player(oppBattler)
         status = evaluate_aggressive(battler, oppBattler)
         player.set_status(status)
 
@@ -60,14 +62,93 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                 player.remove_status(Status.DEFENSIVE)
                 player.set_status(Status.AGGRESSIVE)   # 前期以侵略性为主
             else:
-                # 如果是距离为 2, 则选择不重叠，只堵路
-                #------------------------------------
+                # 如果是距离为 2
+                #----------------
+                # 由于两者相对的情况在前面的 encount enemy 时会被处理，这里如果遇到这种情况
+                # 那么说明两者是出于不相对的对角线位置。
+                #
                 _route = battler.get_route_to_enemy_by_movement(oppBattler)
                 if _route.is_not_found():
                     _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
                 assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
                 assert _route.length > 0, "unexpected overlapping enemy"
                 if _route.length == 2:
+                    #
+                    # 此时应该考虑自己是否正处在敌方的进攻的必经之路上
+                    # 如果是这样，那么考虑不动，这样最保守
+                    # 否则在合适的回合冲上去挡路
+                    #
+                    # 判定方法是将己方坦克分别视为空白和钢墙，看对方的最短路线长度是否有明显延长
+                    # 如果有，那么就堵路
+                    #
+                    # 需要能够正确应对这一局的情况 5cd356e5a51e681f0e921453
+                    # TODO:
+                    #   事实上这一局敌方不管往左还是往右，都是8步，因此这里会判定为不堵路，所以就会主动重叠
+                    #   但是，左右两边的走法是不一样的，往左走必定会走不通，左右的8步并不等价，这里需要还需要
+                    #   进一步的分析路线的可走性
+                    #
+                    # TODO:
+                    #   事实上这样不一定准确，因为如果敌人前面有一个土墙，那么他可以先打掉土墙
+                    #   然后继续前移，这样敌方就可以选择继续往前移动
+                    #
+                    enemyAttackRoute1 = oppBattler.get_shortest_attacking_route(ignore_enemies=True, bypass_enemies=False)
+                    enemyAttackRoute2 = oppBattler.get_shortest_attacking_route(ignore_enemies=False, bypass_enemies=True)
+                    debug_print(enemyAttackRoute1.length, enemyAttackRoute2.length)
+                    if enemyAttackRoute2.length > enemyAttackRoute1.length: # 路线增长，说明是必经之路
+                        player.set_status(Status.ACTIVE_DEFENSIVE)
+                        player.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return Action.STAY
+
+                    #
+                    # 虽然路线长度相同，但是路线的可走性不一定相同，这里先衡量对方当前路线的可走性
+                    # 如果本回合我方等待，敌人向前移动，那么敌方只有在能够不向原来位置闪避的情况下
+                    # 才算是我堵不住他的路，否则仍然视为堵路成功 5cd356e5a51e681f0e921453
+                    #
+                    x0, y0 = oppBattler.xy # 保存原始坐标
+                    enemyMoveAction = oppBattler.get_next_attack_action(enemyAttackRoute1)
+                    # ssert Action.is_move(enemyMoveAction) # 应该是移动
+                    _shouldStay = False
+                    with map_.simulate_one_action(oppBattler, enemyMoveAction):
+                        if battler.get_manhattan_distance_to(oppBattler) == 1: # 此时敌方与我相邻
+                            _shouldStay = True # 这种情况才是真正的设为 True 否则不属于此处应当考虑的情况
+                            for enemyDodgeAction in oppBattler.try_dodge(battler):
+                                with map_.simulate_one_action(oppBattler, enemyDodgeAction):
+                                    if oppBattler.xy != (x0, y0): # 如果敌人移动后可以不向着原来的位置闪避
+                                        _shouldStay = False # 此时相当于不能堵路
+                                        break
+                    if _shouldStay:
+                        player.set_status(Status.ACTIVE_DEFENSIVE)
+                        player.set_status(Status.READY_TO_BLOCK_ROAD)
+                        return Action.STAY
+
+                    #
+                    # 否则自己不处在敌方的必经之路上，考虑主动堵路
+                    #
+                    if (not oppBattler.canShoot # 对方这回合不能射击
+                        or (Action.is_stay(oppPlayer.get_previous_action(back=1))
+                            and Action.is_stay(oppPlayer.get_previous_action(back=2))
+                            ) # 或者对方等待了两个回合，视为没有危险
+                        ):    # 不宜只考虑一回合，否则可能会出现这种预判错误的情况 5cdd894dd2337e01c79e9bed
+                        for moveAction in battler.get_all_valid_move_action():
+                            with map_.simulate_one_action(battler, moveAction):
+                                if battler.xy in enemyAttackRoute1: # 移动后我方坦克位于敌方坦克进攻路线上
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    return moveAction
+
+                        # 我方的移动后仍然不会挡敌人的路？？
+                        for moveAction in battler.get_all_valid_move_action(middle_first=True): # 中路优先
+                            with map_.simulate_one_action(battler, moveAction):
+                                if battler.get_manhattan_distance_to(oppBattler) == 1: # 如果移动后与敌人相邻
+                                    player.set_status(Status.READY_TO_BLOCK_ROAD)
+                                    player.set_status(Status.ACTIVE_DEFENSIVE)
+                                    return moveAction
+
+                        # 否则，就是和敌人接近的连个方向上均为不可走的！
+                        # 那么让后续的逻辑进行处理
+                        pass
+
+                    '''
                     if (
                             # 可能是主动防御但是为了防止重叠而等待
                             (
@@ -123,18 +204,17 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                     #
                     player.set_status(Status.ACTIVE_DEFENSIVE)
                     player.set_status(Status.READY_TO_BLOCK_ROAD)
-                    return Action.STAY
+                    return Action.STAY'''
+
+                # endif
 
 
                 # 转向寻找和敌方进攻路线相似度更高的路线
                 #--------------------------------------
                 #
                 enemyAttackRoute = oppBattler.get_shortest_attacking_route()
-                _routes = [ route for route in battler.get_all_shortest_attacking_routes(delay=3) ] # 允许 3 步延迟
-                _similarities = [ estimate_route_similarity(r, enemyAttackRoute) for r in _routes ]
-                #debug_print(list(zip(_similarities, _routes)))
-                idx = np.argmax( _similarities ) # 相似度最大的路线
-                closestAttackRoute = _routes[idx]
+                closestAttackRoute = max( battler.get_all_shortest_attacking_routes(delay=3), # 允许 3 步延迟
+                                            key=lambda r: estimate_route_similarity(r, enemyAttackRoute) ) # 相似度最大的路线
 
                 #
                 # 判断下一步是否可以出现在敌人的攻击路径之上 5cd31d84a51e681f0e91ca2c
@@ -156,6 +236,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                                 and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
                                 ): # 说明敌人大概率不打算攻击我
                                 willMove = True
+
                         #
                         # 符合了移动的条件
                         # 但是还需要检查移动方向

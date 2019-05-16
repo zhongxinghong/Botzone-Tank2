@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 17:31:24
+# @Last Modified time: 2019-05-17 06:49:19
 
 __all__ = [
 
@@ -17,6 +17,7 @@ from ...field import BrickField
 from ...tank import BattleTank
 from ...strategy.status import Status
 from ...strategy.signal import Signal
+from ...strategy.evaluate import estimate_enemy_effect_on_route
 
 #{ BEGIN }#
 
@@ -106,9 +107,36 @@ class MarchingDecision(SingleDecisionMaker):
             return ( attackAction, Signal.READY_TO_FORCED_MARCH )
 
 
+        oppTank = battler.get_nearest_enemy()
+        oppBattler = BattleTank(oppTank)
+
+        myRoute = battler.get_shortest_attacking_route()
+        oppRoute = oppBattler.get_shortest_attacking_route()
+        # assert not myRoute.is_not_found() and not oppRoute.is_not_found(), "route not found" # 一定能找到路
+        if myRoute.is_not_found() or oppRoute.is_not_found():
+            # 可能出现这种队友堵住去路的及其特殊的情况！ 5cdde41fd2337e01c79f1284
+            allowedDelay = 0
+        else:
+            leadingLength = oppRoute.length - myRoute.length
+
+            if leadingLength <= 0:
+                allowedDelay = 0 # 不必别人领先的情况下，就不要 delay 了 ...
+            else:
+                allowedDelay = leadingLength - 1 # 否则允许延迟至比对手慢一步
+
+
         returnAction = Action.STAY # 将会返回的行为，默认为 STAY
         with outer_label() as OUTER_BREAK:
-            for route in battler.get_all_shortest_attacking_routes(): # 目的是找到一个不是停留的动作，避免浪费时间
+            #
+            # TODO:
+            #   仅仅在此处综合考虑路线长度和敌人的影响，有必要统一让所有尝试获得下一步行为的函数都
+            #   以于此处相同的方式获得下一攻击行为
+            #
+            # for route in battler.get_all_shortest_attacking_routes(): # 目的是找到一个不是停留的动作，避免浪费时间
+            # for route in sorted_routes_by_enemy_effect(
+            #                 battler.get_all_shortest_attacking_routes(delay=allowedDelay), player ):
+            for route in sorted( battler.get_all_shortest_attacking_routes(delay=allowedDelay),
+                                    key=lambda r: estimate_enemy_effect_on_route(r, player) ):
 
                 # 首先清除可能出现的状态，也就是导致 stay 的状况
                 player.remove_status( Status.WAIT_FOR_MARCHING,

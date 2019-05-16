@@ -1,7 +1,7 @@
 {
     "game":
     {
-        "match_id": "5cd51fc686d50d05a0092f4c",
+        "match_id": "5cdde41fd2337e01c79f1284",
         "initial_turn": 1
     },
 
@@ -19,7 +19,7 @@
 
     "simulator":
     {
-        "data_source": 1,
+        "data_source": 0,
         "pause": true,
         "turn_interval": 0.3,
         "print": true,

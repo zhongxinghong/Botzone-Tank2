@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-10 16:17:28
+# @Last Modified time: 2019-05-17 06:44:23
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -108,7 +108,7 @@ class BattleTank(object):
         """
         return not self.is_in_our_site()
 
-    def get_surrounding_empty_field_points(self):
+    def get_surrounding_empty_field_points(self, **kwargs):
         """
         获得周围可以移动到达的空位
         """
@@ -116,7 +116,7 @@ class BattleTank(object):
         map_ = self._map
         x, y = tank.xy
         points = []
-        for dx, dy in get_searching_directions(x, y):
+        for dx, dy in get_searching_directions(x, y, **kwargs):
             x3 = x + dx
             y3 = y + dy
             if not map_.in_map(x3, y3):
@@ -134,7 +134,7 @@ class BattleTank(object):
                     continue
         return points
 
-    def get_all_valid_move_action(self):
+    def get_all_valid_move_action(self, **kwargs):
         """
         所有合法的移动行为
         """
@@ -142,7 +142,7 @@ class BattleTank(object):
         map_ = self._map
         actions = []
         x1, y1 = tank.xy
-        for x2, y2 in self.get_surrounding_empty_field_points():
+        for x2, y2 in self.get_surrounding_empty_field_points(**kwargs):
             moveAction = Action.get_move_action(x1, y1, x2, y2)
             map_.is_valid_move_action(tank, moveAction)
             actions.append(moveAction)
@@ -200,7 +200,7 @@ class BattleTank(object):
                         matrix_T,
                         block_types=DEFAULT_BLOCK_TYPES+(
                             Field.BASE + 1 + side,
-                            Field.TANK + 1 + side,
+                            Field.TANK + 1 + side, # 队友有可能会变成阻碍！ 5cdde41fd2337e01c79f1284
                             Field.MULTI_TANK,
                         ),
                         destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
@@ -814,7 +814,7 @@ class BattleTank(object):
         return self.get_enemy_behind_brick(action) is not None
 
 
-    def get_nearest_enemy(self, block_teammate=False, isolate=False):
+    def get_nearest_enemy(self): #, block_teammate=False, isolate=False):
         """
         获得最近的敌人，移动距离
 
@@ -827,7 +827,7 @@ class BattleTank(object):
             - enemy   TankField
 
         """
-        tank = self._tank
+        '''tank = self._tank
         map_ = self._map
 
         _enemies = map_.tanks[1 - tank.side]
@@ -846,7 +846,7 @@ class BattleTank(object):
             # 注：这是一个糟糕的设计，因为 BattleTank 对象最初被设计为只懂得单人决策的对象
             # 他不应该知道队友的行为，但是此处打破了这个规则
             #
-            teammateBattler = BattleTank( map_.tanks[tank.side][ 1 - tank.id ] )
+            teammate = BattleTank( map_.tanks[tank.side][ 1 - tank.id ] )
             if teammateBattler.destroyed:
                 pass
             else:
@@ -887,7 +887,22 @@ class BattleTank(object):
         idx = routeWithEnemyList.index(
                     min(routeWithEnemyList, key=lambda tup: tup[0].length) )
 
-        return routeWithEnemyList[idx][1]
+        return routeWithEnemyList[idx][1]'''
+        tank = self._tank
+        map_ = self._map
+
+        enemies = [ enemy for enemy in map_.tanks[1 - tank.side]
+                            if not enemy.destroyed ] # 已经被摧毁的敌人就不考虑了
+
+        battler = self
+        teammate = BattleTank( map_.tanks[tank.side][ 1 - tank.id ] )
+
+        if not teammate.destroyed:
+            return min( enemies, key=lambda enemy:
+                    battler.get_manhattan_distance_to(enemy) - teammate.get_manhattan_distance_to(enemy)
+                ) # 综合队友的情况进行考虑，对方离我近，同时离队友远，那么那么更接近于我
+        else:
+            return min( enemies, key=lambda enemy: battler.get_manhattan_distance_to(enemy) )
 
 
     def check_is_outer_wall_of_enemy_base(self, field, layer=2):

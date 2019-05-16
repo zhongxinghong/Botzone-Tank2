@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 18:55:57
+# @Last Modified time: 2019-05-16 03:47:17
 """
 游戏团队类
 --------------------------------------------
@@ -424,26 +424,6 @@ class Tank2Team(Team):
         #---------------------------
         # 如果遇到两个人隔着两个墙对着一个敌人的时候，就直接破墙
         #
-
-
-
-        # 主动打破重叠的信号
-        #-------------------
-        # 1. 很多时候只有主动打破重叠，才能制造机会！
-        #
-        for idx, (player, action) in enumerate(zip(self.players, returnActions)):
-            if (Action.is_stay(action)
-                and player.has_status(Status.OVERLAP_WITH_ENEMY)  # 在等待敌人
-                and not player.has_status(Status.RELOADING)       # 确认一下有炮弹
-                and self.has_status_in_previous_turns(player, Status.OVERLAP_WITH_ENEMY, turns=2)
-                ): # 数个回合里一直在等待
-
-                action3, signal3 = player.make_decision(Signal.SUGGEST_TO_BREAK_OVERLAP)
-                if Signal.is_break(signal3):
-                    continue
-
-                if signal3 == Signal.READY_TO_BREAK_OVERLAP:
-                    returnActions[idx] = action3
 
 
         # 主动找重叠策略

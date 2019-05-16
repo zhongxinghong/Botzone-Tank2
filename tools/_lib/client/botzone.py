@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 02:23:29
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 04:45:05
+# @Last Modified time: 2019-05-16 16:33:58
 
 __all__ = [
 
@@ -111,7 +111,7 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
         #self._save_content(r, "bot_detail_%s.json" % botID)
         return r
 
-    def get_global_match_list(self, gameID, startID=""):
+    def get_global_match_list(self, gameID, startID="", endID=""):
         """
         获取全局的比赛记录
 
@@ -125,6 +125,7 @@ class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
                 BOTZONE_URL_GLOBAL_MATCH_LIST,
                 params={
                     "startid": startID,
+                    "endid": endID,
                     "game": gameID,
                 },
                 hooks=get_hooks(hook_check_status_code),

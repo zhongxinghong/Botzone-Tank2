@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:42:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 18:51:50
+# @Last Modified time: 2019-05-16 03:55:51
 
 __all__ = [
 
@@ -25,6 +25,11 @@ class AttackBaseDecision(SingleDecisionMaker):
 
         player  = self._player
         battler = player._battler
+
+        # TODO:
+        #   可能需要考虑一种特殊情况： 队友被杀，自己下一步打掉对方基地，但是对方下一步把我干掉
+        #   这种情况下，即使我方拆掉对方基地也算平局。也许可以考虑先闪避一回合，然后再继续拆家。
+        #
 
         if battler.is_face_to_enemy_base() and battler.canShoot:
             player.set_status(Status.READY_TO_ATTACK_BASE) # 特殊状态

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 16:22:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 00:53:16
+# @Last Modified time: 2019-05-17 06:40:51
 """
 决策时的通用函数库
 
@@ -56,7 +56,9 @@ def fake_map_matrix_T_without_enemy(map, mySide):
     oppSide = 1 - mySide
     cMatrixMap = map_.matrix_T.copy()
     for oppTank in map_.tanks[oppSide]:
-        if cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide:
+        if (cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide
+            or cMatrixMap[oppTank.xy] == Field.MULTI_TANK # 还需要考虑重叠的坦克
+            ):
             cMatrixMap[oppTank.xy] = Field.EMPTY
     return cMatrixMap
 
@@ -70,7 +72,9 @@ def fake_map_matrix_T_thinking_of_enemy_as_steel(map, mySide):
     oppSide = 1 - mySide
     cMatrixMap = map_.matrix_T.copy()
     for oppTank in map_.tanks[oppSide]:
-        if cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide:
+        if (cMatrixMap[oppTank.xy] == Field.TANK + 1 + oppSide
+            or cMatrixMap[oppTank.xy] == Field.MULTI_TANK # 还需要考虑重叠的坦克
+            ):
             cMatrixMap[oppTank.xy] = Field.STEEL
     return cMatrixMap
 
