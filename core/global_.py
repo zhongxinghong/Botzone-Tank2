@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-27 15:29:54
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-09 05:32:36
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-20 05:51:32
 """
 全局导入需要的库
 
@@ -14,10 +14,14 @@ __all__ = [
     "sys",
     "json",
     "random",
+    "pickle",
+    "base64",
+    "gzip",
     "np",
     "deque",
     "pprint",
     "functools",
+    "contextmanager",
 
     ]
 

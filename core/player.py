@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 18:51:22
+# @Last Modified time: 2019-05-20 11:31:57
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -22,7 +22,8 @@ from .tank import BattleTank
 from .strategy.signal import Signal
 from .strategy.status import Status
 from .decision import DecisionChain, MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
-                    OverlappingDecision, EncountEnemyDecision, AttackBaseDecision
+    OverlappingDecision, EncountEnemyDecision, AttackBaseDecision, LeaveTeammateDecision,\
+    BehindBrickDecision
 
 #{ BEGIN }#
 
@@ -73,6 +74,7 @@ class Tank2Player(Player):
         self._status = set()    #　当前回合的状态，可以有多个，每回合情况
         self._labels = set()    # 对手给我做的标记，标记后长期有效
         self._riskyEnemy = None # 缓存引起潜在风险的敌人 BattleTank
+        self._decision = None   # 缓存最终的决策
 
     def __eq__(self, other):
         return self.side == other.side and self.id == other.id
@@ -132,6 +134,12 @@ class Tank2Player(Player):
 
     def set_risk_enemy(self, enemy):
         self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
+
+    def get_current_decision(self): # 返回已经做出的决策
+        return self._decision
+
+    def change_current_decision(self, action): # 团队用来修改队员当前决策的缓存
+        self._decision = action
 
     def get_status(self):
         return self._status
@@ -245,10 +253,13 @@ class Tank2Player(Player):
         # 2. 身边没有闪避的机会，打破一堵墙，对方刚好从旁路闪出来
         #---------------------------
         if Action.is_shoot(action):
-            with map_.simulate_one_action(tank, action): # 模拟本方行为
+            destroyedFields = battler.get_destroyed_fields_if_shoot(action)
+            with map_.simulate_one_action(battler, action): # 模拟本方行为
+                #
                 # TODO:
                 #   只模拟一个坦克的行为并不能反映真实的世界，因为敌方这回合很有可能射击
                 #   那么下回合它就无法射击，就不应该造成威胁
+                #
                 for oppTank in map_.tanks[1 - tank.side]:
                     if oppTank.destroyed:
                         continue
@@ -256,14 +267,18 @@ class Tank2Player(Player):
                     for oppAction in Action.MOVE_ACTIONS: # 任意移动行为
                         if not map_.is_valid_action(oppTank, oppAction):
                             continue
-                        with map_.simulate_one_action(oppTank, oppAction): # 模拟地方行为
-                            for enemy in oppBattler.get_enemies_around():
-                                if enemy is tank: # 敌方原地不动或移动一步后，能够看到该坦克
-                                    # 还可以尝试回避
-                                    actions = battler.try_dodge(oppBattler)
-                                    if len(actions) == 0: # 无法回避，危险行为
-                                        self._riskyEnemy = oppBattler
-                                        return False
+                        with map_.simulate_one_action(oppTank, oppAction): # 模拟敌方行为
+                            for field in destroyedFields:
+                                if field.xy == oppTank.xy:
+                                    break # 对方下一步不可能移动到我即将摧毁的 field 上，所以这种情况是安全的
+                            else:
+                                for enemy in oppBattler.get_enemies_around():
+                                    if enemy is tank: # 敌方原地不动或移动一步后，能够看到该坦克
+                                        # 还可以尝试回避
+                                        actions = battler.try_dodge(oppBattler)
+                                        if len(actions) == 0: # 无法回避，危险行为
+                                            self._riskyEnemy = oppBattler
+                                            return False
 
         return True # 默认安全？
 
@@ -425,6 +440,7 @@ class Tank2Player(Player):
         if inputSignal != Signal.NONE and outputSignal == Signal.NONE:
             outputSignal = Signal.UNHANDLED # 没有回复团队信号，事实上不允许这样，至少是 CANHANDLED
 
+        self._decision = action # 缓存决策
         return ( action, outputSignal )
 
 
@@ -450,10 +466,12 @@ class Tank2Player(Player):
 
         action = DecisionChain(
 
+                    LeaveTeammateDecision(self, signal),
                     AttackBaseDecision(self, signal),
                     EncountEnemyDecision(self, signal),
                     OverlappingDecision(self, signal),
                     BaseDefenseDecision(self, signal),
+                    BehindBrickDecision(self, signal),
                     ActiveDefenseDecision(self, signal),
                     MarchingDecision(self, signal),
 

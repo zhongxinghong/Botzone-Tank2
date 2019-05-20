@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-16 03:47:17
+# @Last Modified time: 2019-05-20 11:03:08
 """
 游戏团队类
 --------------------------------------------
@@ -162,7 +162,10 @@ class Tank2Team(Team):
         Return:
             - actions    [int, int]    0, 1 号玩家的决策
         """
-        map_ = self._map
+        map_    = self._map
+        player1 = self._player1
+        player2 = self._player2
+
 
         # 假装先让对方以自己的想法决策
         #-------------------------------
@@ -170,7 +173,6 @@ class Tank2Team(Team):
         #
         for oppPlayer in self._opponentTeam.players:
             oppPlayer.make_decision()
-
 
 
         action1 = action2 = Action.INVALID
@@ -185,8 +187,8 @@ class Tank2Team(Team):
         # 了解个人真实想法
         #
 
-        action1, _ = self._player1.make_decision()
-        action2, _ = self._player2.make_decision()
+        action1, _ = player1.make_decision()
+        action2, _ = player2.make_decision()
 
         returnActions  = [ action1, action2 ] # 实际的行为值
 
@@ -209,6 +211,32 @@ class Tank2Team(Team):
         # TODO:
         #   牺牲攻击局，可能需要考虑一下闪避 5ccca535a51e681f0e8c7131
 
+
+        # 打破队友重叠的信号
+        #------------------
+        # 己方两个坦克重叠在一起这种事情实在是太愚蠢了 ...
+        #
+        if player1.tank.xy == player2.tank.xy:
+
+            if len([ action for action in returnActions if Action.is_move(action) ]) == 1:
+                pass # 一人移动一人非移动，那么是合理的
+            elif (all( Action.is_move(action) for action in returnActions )
+                and returnActions[0] != returnActions[1]
+                ): # 两人均为移动，但是两人的移动方向不一样，这样也是可以的
+                pass
+            elif all(hasTeamActions): # 两者都拥有强制命令
+                pass
+            else:
+                # 两个队员可以认为是一样的，因此任意选择一个就好
+                if hasTeamActions[0]:
+                    player, idx = (player2, 1)
+                else:
+                    player, idx = (player1, 0)
+
+                action3, signal3 = player.make_decision(Signal.SHOULD_LEAVE_TEAMMATE)
+                if signal3 == Signal.READY_TO_LEAVE_TEAMMATE:
+                    returnActions[idx]  = action3
+                    hasTeamActions[idx] = True
 
 
         # 强攻信号
@@ -325,10 +353,10 @@ class Tank2Team(Team):
             if (action == Action.STAY                                 # 当前回合处于等待状态
                 and player.has_status(Status.HAS_ENEMY_BEHIND_BRICK)  # 墙后有人造成的
                 and player.has_status(Status.WAIT_FOR_MARCHING)       # 因此等待行军
-                and not player.has_status(Status.DEFENSIVE) # 不要让防御性的队友随意破墙
+                #and not player.has_status(Status.DEFENSIVE) # 不要让防御性的队友随意破墙
                 and not player.has_status(Status.RELOADING) # 目前有弹药
-                and self.has_status_in_previous_turns(player, Status.WAIT_FOR_MARCHING, turns=1)
-                ): # 上两回合也处于僵持状态
+                # and self.has_status_in_previous_turns(player, Status.WAIT_FOR_MARCHING, turns=1) # 改成一有机会就先留后路
+                ):
 
                 # 触发的条件是一方隔墙，队友因为这两个人的僵持受到牵制
                 #----------------------------------------------------
@@ -361,6 +389,8 @@ class Tank2Team(Team):
 
                 shouldBreakBrick = False
 
+                ''' 这个两个触发已经不再需要了 5ce217e8d2337e01c7a3790c
+
                 # TODO:
                 #   这种情况挺难遇到的，而且一旦遇到一般都为时过晚
                 #   应该要模拟地图预测一下，提前开一炮
@@ -375,11 +405,12 @@ class Tank2Team(Team):
                         # 两者受到同一个敌人牵制，那么发动破墙信号
                         shouldBreakBrick = True
 
+
                 elif ( teammate.has_status(Status.AGGRESSIVE)
                     or teammate.has_status(Status.STALEMENT)
                     ):
-                    teammateAction = returnActions[ teammateIdx ] # 确保队友动作为移动
-                    if (Action.is_move(teammateAction)
+                    teammateAction = returnActions[ teammateIdx ]
+                    if (Action.is_move(teammateAction) # 确保队友动作为移动
                         and teammate.has_status(Status.KEEP_ON_MARCHING) # 队友正在行军
                         ):
                         # 尝试模拟下一回合的队友状态，并让队友重新决策，查看他的状态
@@ -391,8 +422,25 @@ class Tank2Team(Team):
                                 teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
                                 playerRiskyEnemyBattler = player.get_risky_enemy_battler()
                                 if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
-                                    shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙
+                                    shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙'''
 
+                #
+                # 如果遇到对手准备和队友对射 5cd364e4a51e681f0e921e7a
+                # 那么考虑直接破墙
+                #
+                # 敌方当前回合应该必定会还击，否则就失去了防御的意义
+                # 于是，随后就会遇到二对一且三方均没有炮弹
+                # 如果对方下回合不走，那么二打一直接干掉
+                # 如果对方下回合移动，那么攻击的队友就解除了威胁，可以继续前进
+                #
+                if (not teammate.has_status(Status.DEFENSIVE)
+                    and teammate.has_status(Status.ENCOUNT_ENEMY)
+                    and teammate.has_status(Status.READY_TO_FIGHT_BACK)
+                    ):
+                    teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
+                    playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                    if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
+                        shouldBreakBrick = True
 
                 if shouldBreakBrick:
                     returnActions[playerIdx] = action3
@@ -405,7 +453,10 @@ class Tank2Team(Team):
         # 不管对方为什么离开，都不亏，假如对方下一回合回头，我方就攻过去，假如对方是赶去支援
         # 我方上前，然后等待一回合后会触发强攻信号
         #
-        for idx, (player, action) in enumerate(zip(self.players, returnActions)):
+        # 这个策略已经不再适用了！ 5ce01b75d2337e01c7a11d4d
+        # 容易导致被敌人突击
+        #
+        '''for idx, (player, action) in enumerate(zip(self.players, returnActions)):
             if (Action.is_stay(action)
                 and not player.has_status(Status.HAS_ENEMY_BEHIND_BRICK)
                 and self.has_status_in_previous_turns(player, Status.HAS_ENEMY_BEHIND_BRICK, turns=1)
@@ -416,8 +467,7 @@ class Tank2Team(Team):
                     continue
                 if signal3 == Signal.READY_TO_BREAK_BRICK: # 可以破墙，则选择破墙
                     returnActions[idx] = action3
-                    hasTeamActions[idx] = True
-
+                    hasTeamActions[idx] = True'''
 
 
         # TODO: 主动破墙之二打一

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @author:      Rabbit
 # @filename:    botzone_tank2.py
-# @date:        2019-05-17 06:50:06
+# @date:        2019-05-20 11:05:43
 # @site:        https://github.com/zhongxinghong/Botzone-Tank2
 # @description: Automatically built Python single-file script for Botzone/Tank2 game
 """
@@ -1007,6 +1007,9 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
     FORCED_MARCH                     = 17  # 团队信号，强制行军
     READY_TO_FORCED_MARCH            = 18  # 队员信号，准备强制行军
 
+    SHOULD_LEAVE_TEAMMATE            = 19  # 团队信号，需要和队友打破重叠
+    READY_TO_LEAVE_TEAMMATE          = 20  # 队员信号，准备和队友打破重叠
+
 
     BREAK_SIGNALS = ( UNHANDLED, CANHANDLED )
 
@@ -1058,6 +1061,9 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     WILL_DODGE_TO_LONG_WAY       = 33  # 遭遇敌人自己没有炮弹，为了保命而闪避，但是增加了攻击路线长度
     OPPOSITE_SHOOTING_WITH_ENEMY = 34  # 正在和敌人对射
     READY_TO_BACK_AWAY           = 35  # 假装逃跑
+    READY_TO_CLEAR_A_ROAD_FIRST  = 36  # 进攻时预先清除与自己相隔一步的土墙
+    READY_TO_DOUBLE_KILL_ENEMIES = 37  # 遇到敌人重叠在一起，尝试和两个敌人同归于尽
+    READY_TO_LEAVE_TEAMMATE      = 38  # 准备和队友打破重叠
 
     READY_TO_PREPARE_FOR_BREAK_BRICK = 41 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK             = 42 # 准备破墙
@@ -1534,17 +1540,17 @@ def _BFS_search_all_routes_for_move(start, end, map_matrix_T, weight_matrix_T,
 
         x, y = node[0]
 
+        if (x, y) == end: # 到达终点
+            _foundRoute = True
+            yield Route(node)
+            continue
+
         if matrixMarked[x, y]:
             continue
         matrixMarked[x, y] = True
 
         if DEBUG_MODE:
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
-
-        if (x, y) == end: # 到达终点
-            _foundRoute = True
-            yield Route(node)
-            continue
 
         for dx, dy in get_searching_directions(x1, x2, y1, y2,
                                                x_axis_first=x_axis_first,
@@ -1583,12 +1589,9 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
 
     实现思路：
 
-    首先，我们可以认为，射击的方式能够比移动的方式更快地接近目标，毕竟炮弹是飞行的。
-    而能够直接向目标发动射击的位置，仅仅位于与它同一行或同一列的位置上，因此，搜索的思路是，
-    对于所有可以向目标发起进攻的坐标，分别找到从起点移动到这些坐标的最短路径，然后接着以射击
-    的方式，找到从这些射击点到达目标点的路径（这种路径可以抽象地认为是炮弹飞行的路径），
-    然后从中找到最短的一条路径（对于射击来讲，距离可以理解为就是开炮和冷却的回合），
-    该路径即为所求的。
+    通过射击的方式能够比单纯通过移动的方式更快地接近目标，这是显而易见的，毕竟炮弹可以飞行。
+    于是，将地图划分为两个区域，一个是可以发动射击的区域，它们仅仅与目标处在同一行或同一列的位置上
+    另一个就是常规的移动可达的区域。搜索过程中对着两种情况下相应的节点权重做区分对待即可。
 
     ---------------------------------------------------------------------------
 
@@ -1689,16 +1692,14 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         ]
 
     queue  = deque() # queue( [Node] )
-    matrixMarked = np.zeros_like(matrixMap, dtype=np.bool8)
-    canShootNodeChains = {} # { (x, y): Node } 从 start 到每一个可射击点的最短路线
+    matrixMarked  = np.zeros_like(matrixMap, dtype=np.bool8) # 标记移动到的位置
 
     if DEBUG_MODE:
         matrixDistance = np.full_like(matrixMap, -1)
 
     queue.append(startNode) # init
 
-
-    ## 首先通过常规的 BFS 搜索，确定到达每一个射击点的最短路径
+    _foundRoute = False
 
     while len(queue) > 0:
 
@@ -1711,87 +1712,75 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
 
         x, y = node[0]
 
-        if matrixMarked[x, y]:
+        if (x, y) == end:
+            _foundRoute = True
+            yield Route(node)
             continue
-        matrixMarked[x, y] = True
 
-        if matrixCanShoot[x, y]:
-            canShootNodeChains[(x, y)] = node  # 记录最短节点
-            continue  # 然后就不要继续找这个节点了！
+        if matrixCanShoot[x, y]: # 如果当前处在射击区域
 
-        if DEBUG_MODE:
-            matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+            # 因为在射击区域中，行为的方向都是单向的，不会出现从射击区域进入移动区域，
+            # 或者从射击的下一步移动回到上一步的情况，
+            # 因此没有必要对射击行为已到达过的节点位置进行检查和标记
 
-        for dx, dy in get_searching_directions(x1, y1, x2, y2,
-                                               x_axis_first=x_axis_first,
-                                               middle_first=middle_first):
-            x, y = node[0]
+            if DEBUG_MODE:
+                matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+
+            # 确定射击方向
+            dx = np.sign(x2 - x)
+            dy = np.sign(y2 - y)
             x3 = x + dx
             y3 = y + dy
-            if (not (0 <= x3 < width and 0 <= y3 < height) # not in map
-                or not matrixCanMoveTo[x3, y3]
-                ):
-                continue
 
-            weight = matrixMoveWeight[x3, y3]
-            if weight == INFINITY_WEIGHT:
-                continue
-
-            queue.append([
-                (x3, y3),
-                node,
-                weight-1,
-                weight,
-                MOVE_ACTION,
-                ])
-
-    #if start == (5, 6):
-    #    debug_print("distance matrix:\n", matrixDistance.T)
-
-
-    ## 接下来对于每个节点，尝试通过射击的方式走完剩下的路程
-
-    routes = []
-
-    for xy, node in canShootNodeChains.items():
-
-        # 确定攻击方向
-        x3, y3 = xy
-        dx = np.sign(x2 - x3)
-        dy = np.sign(y2 - y3)
-
-        while True:
-
-            if (x3, y3) == end: # 到达目标
-                routes.append( Route(node) )
-                break
-
-            x3 += dx
-            y3 += dy
             weight = matrixShootWeight[x3, y3]
 
-            node = [ # 走到下一个节点
-                (x3, y3),
+            nextNode = [  # 必定可以保证下一个节点仍然处在射击区域，不会到达地图外，
+                (x3, y3), # 并且下次还会继续进入这个分支，除非已经到达基地
                 node,
                 weight-1, # 补偿
                 weight,
-                SHOOT_ACTION,
+                SHOOT_ACTION, # 标志着上一步处在射击区域内
                 ]
 
+            if weight == 0: # 射击的过渡动作，下一个动作和当前动作同时发生
+                queue.appendleft(nextNode) # 添加到开头，下回合马上继续
+            else:
+                queue.append(nextNode)
 
-    # debug_print( [_get_route_length_by_node_chain(node) for node in reachTargetNodeChains] )
+        else: # 否则为非射击区域，属于常规移动区域
 
-    ## 找到最短的路径
+            if matrixMarked[x, y]: # 只对移动区域进行标记
+                continue
+            matrixMarked[x, y] = True
 
-    #if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
-        '''dummyTail[1] = min(reachTargetNodeChains, # 最短路径
-                        key=lambda node: _get_route_length_by_node_chain(node))
-        '''
-    if len(routes) == 0:
-        yield Route()
-    else:
-        routes.sort(key=lambda route: route.length)
-        yield from routes
+            if DEBUG_MODE:
+                matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+
+            for dx, dy in get_searching_directions(x1, y1, x2, y2,
+                                                   x_axis_first=x_axis_first,
+                                                   middle_first=middle_first):
+                x3 = x + dx
+                y3 = y + dy
+
+                if (not (0 <= x3 < width and 0 <= y3 < height) # not in map
+                    or not matrixCanMoveTo[x3, y3]
+                    ):
+                    continue
+
+                weight = matrixMoveWeight[x3, y3]
+                if weight == INFINITY_WEIGHT:
+                    continue
+
+                queue.append([
+                    (x3, y3),
+                    node,
+                    weight-1,
+                    weight,
+                    MOVE_ACTION, # 标志着上一步处在非射击区域内
+                    ])
+
+    if not _foundRoute:
+        yield Route() # 空节点
 
 
 def find_all_routes_for_move(start, end, matrix_T,
@@ -1851,7 +1840,7 @@ def find_all_routes_for_shoot(start, end, matrix_T,
     routes = _BFS_search_all_routes_for_shoot(
                     start, end, matrixMap, matrixMoveWeight, matrixShootWeight,
                     block_types=block_types, destroyable_types=destroyable_types,
-                    x_axis_first=x_axis_first, middle_first=False)
+                    x_axis_first=x_axis_first, middle_first=middle_first)
 
     yield from routes
 
@@ -2143,6 +2132,10 @@ class BattleTank(object):
         return self._tank
 
     @property
+    def tank(self):
+        return self._tank
+
+    @property
     def side(self):
         return self._tank.side
 
@@ -2172,14 +2165,14 @@ class BattleTank(object):
 
     def is_in_our_site(self):
         """
-        是否处于我方半边的地图，包含中线
+        是否处于我方半边的地图，不包含中线
         """
         base = self._map.bases[self.side]
-        return ( np.abs( self.y - base.y ) <= 4 )
+        return ( np.abs( self.y - base.y ) < 4 )
 
     def is_in_enemy_site(self):
         """
-        是否处于地方半边的地图，不包含中线
+        是否处于地方半边的地图，包含中线
         """
         return not self.is_in_our_site()
 
@@ -2238,7 +2231,7 @@ class BattleTank(object):
         """
         return self.get_all_valid_move_action() + self.get_all_valid_shoot_action() + [ Action.STAY ]
 
-    def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0):
+    def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0, **kwargs):
         """
         获得所有最短的进攻路线
 
@@ -2281,7 +2274,8 @@ class BattleTank(object):
                         destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
                             Field.BASE + 1 + oppSide,
                             # 不将敌方坦克加入到其中
-                        ))
+                        ),
+                        **kwargs)
 
         minLength = INFINITY_ROUTE_LENGTH
 
@@ -3047,6 +3041,7 @@ class Tank2Player(Player):
         self._status = set()    #　当前回合的状态，可以有多个，每回合情况
         self._labels = set()    # 对手给我做的标记，标记后长期有效
         self._riskyEnemy = None # 缓存引起潜在风险的敌人 BattleTank
+        self._decision = None   # 缓存最终的决策
 
     def __eq__(self, other):
         return self.side == other.side and self.id == other.id
@@ -3106,6 +3101,12 @@ class Tank2Player(Player):
 
     def set_risk_enemy(self, enemy):
         self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
+
+    def get_current_decision(self): # 返回已经做出的决策
+        return self._decision
+
+    def change_current_decision(self, action): # 团队用来修改队员当前决策的缓存
+        self._decision = action
 
     def get_status(self):
         return self._status
@@ -3219,6 +3220,7 @@ class Tank2Player(Player):
         # 2. 身边没有闪避的机会，打破一堵墙，对方刚好从旁路闪出来
         #---------------------------
         if Action.is_shoot(action):
+            destroyedFields = battler.get_destroyed_fields_if_shoot(action)
             with map_.simulate_one_action(tank, action): # 模拟本方行为
                 # TODO:
                 #   只模拟一个坦克的行为并不能反映真实的世界，因为敌方这回合很有可能射击
@@ -3231,13 +3233,17 @@ class Tank2Player(Player):
                         if not map_.is_valid_action(oppTank, oppAction):
                             continue
                         with map_.simulate_one_action(oppTank, oppAction): # 模拟地方行为
-                            for enemy in oppBattler.get_enemies_around():
-                                if enemy is tank: # 敌方原地不动或移动一步后，能够看到该坦克
-                                    # 还可以尝试回避
-                                    actions = battler.try_dodge(oppBattler)
-                                    if len(actions) == 0: # 无法回避，危险行为
-                                        self._riskyEnemy = oppBattler
-                                        return False
+                            for field in destroyedFields:
+                                if field.xy == oppTank.xy:
+                                    break # 对方下一步不可能移动到我即将摧毁的 field 上，所以这种情况是安全的
+                            else:
+                                for enemy in oppBattler.get_enemies_around():
+                                    if enemy is tank: # 敌方原地不动或移动一步后，能够看到该坦克
+                                        # 还可以尝试回避
+                                        actions = battler.try_dodge(oppBattler)
+                                        if len(actions) == 0: # 无法回避，危险行为
+                                            self._riskyEnemy = oppBattler
+                                            return False
 
         return True # 默认安全？
 
@@ -3399,6 +3405,7 @@ class Tank2Player(Player):
         if inputSignal != Signal.NONE and outputSignal == Signal.NONE:
             outputSignal = Signal.UNHANDLED # 没有回复团队信号，事实上不允许这样，至少是 CANHANDLED
 
+        self._decision = action # 缓存决策
         return ( action, outputSignal )
 
 
@@ -3424,10 +3431,12 @@ class Tank2Player(Player):
 
         action = DecisionChain(
 
+                    LeaveTeammateDecision(self, signal),
                     AttackBaseDecision(self, signal),
                     EncountEnemyDecision(self, signal),
                     OverlappingDecision(self, signal),
                     BaseDefenseDecision(self, signal),
+                    BehindBrickDecision(self, signal),
                     ActiveDefenseDecision(self, signal),
                     MarchingDecision(self, signal),
 
@@ -3563,7 +3572,10 @@ class Tank2Team(Team):
         Return:
             - actions    [int, int]    0, 1 号玩家的决策
         """
-        map_ = self._map
+        map_    = self._map
+        player1 = self._player1
+        player2 = self._player2
+
 
         # 假装先让对方以自己的想法决策
         #-------------------------------
@@ -3571,7 +3583,6 @@ class Tank2Team(Team):
         #
         for oppPlayer in self._opponentTeam.players:
             oppPlayer.make_decision()
-
 
 
         action1 = action2 = Action.INVALID
@@ -3586,8 +3597,8 @@ class Tank2Team(Team):
         # 了解个人真实想法
         #
 
-        action1, _ = self._player1.make_decision()
-        action2, _ = self._player2.make_decision()
+        action1, _ = player1.make_decision()
+        action2, _ = player2.make_decision()
 
         returnActions  = [ action1, action2 ] # 实际的行为值
 
@@ -3610,6 +3621,32 @@ class Tank2Team(Team):
         # TODO:
         #   牺牲攻击局，可能需要考虑一下闪避 5ccca535a51e681f0e8c7131
 
+
+        # 打破队友重叠的信号
+        #------------------
+        # 己方两个坦克重叠在一起这种事情实在是太愚蠢了 ...
+        #
+        if player1.tank.xy == player2.tank.xy:
+
+            if len([ action for action in returnActions if Action.is_move(action) ]) == 1:
+                pass # 一人移动一人非移动，那么是合理的
+            elif (all( Action.is_move(action) for action in returnActions )
+                and returnActions[0] != returnActions[1]
+                ): # 两人均为移动，但是两人的移动方向不一样，这样也是可以的
+                pass
+            elif all(hasTeamActions): # 两者都拥有强制命令
+                pass
+            else:
+                # 两个队员可以认为是一样的，因此任意选择一个就好
+                if hasTeamActions[0]:
+                    player, idx = (player2, 1)
+                else:
+                    player, idx = (player1, 0)
+
+                action3, signal3 = player.make_decision(Signal.SHOULD_LEAVE_TEAMMATE)
+                if signal3 == Signal.READY_TO_LEAVE_TEAMMATE:
+                    returnActions[idx]  = action3
+                    hasTeamActions[idx] = True
 
 
         # 强攻信号
@@ -3726,10 +3763,10 @@ class Tank2Team(Team):
             if (action == Action.STAY                                 # 当前回合处于等待状态
                 and player.has_status(Status.HAS_ENEMY_BEHIND_BRICK)  # 墙后有人造成的
                 and player.has_status(Status.WAIT_FOR_MARCHING)       # 因此等待行军
-                and not player.has_status(Status.DEFENSIVE) # 不要让防御性的队友随意破墙
+                #and not player.has_status(Status.DEFENSIVE) # 不要让防御性的队友随意破墙
                 and not player.has_status(Status.RELOADING) # 目前有弹药
-                and self.has_status_in_previous_turns(player, Status.WAIT_FOR_MARCHING, turns=1)
-                ): # 上两回合也处于僵持状态
+                # and self.has_status_in_previous_turns(player, Status.WAIT_FOR_MARCHING, turns=1) # 改成一有机会就先留后路
+                ):
 
                 # 触发的条件是一方隔墙，队友因为这两个人的僵持受到牵制
                 #----------------------------------------------------
@@ -3762,6 +3799,8 @@ class Tank2Team(Team):
 
                 shouldBreakBrick = False
 
+                ''' 这个两个触发已经不再需要了 5ce217e8d2337e01c7a3790c
+
                 # TODO:
                 #   这种情况挺难遇到的，而且一旦遇到一般都为时过晚
                 #   应该要模拟地图预测一下，提前开一炮
@@ -3776,11 +3815,12 @@ class Tank2Team(Team):
                         # 两者受到同一个敌人牵制，那么发动破墙信号
                         shouldBreakBrick = True
 
+
                 elif ( teammate.has_status(Status.AGGRESSIVE)
                     or teammate.has_status(Status.STALEMENT)
                     ):
-                    teammateAction = returnActions[ teammateIdx ] # 确保队友动作为移动
-                    if (Action.is_move(teammateAction)
+                    teammateAction = returnActions[ teammateIdx ]
+                    if (Action.is_move(teammateAction) # 确保队友动作为移动
                         and teammate.has_status(Status.KEEP_ON_MARCHING) # 队友正在行军
                         ):
                         # 尝试模拟下一回合的队友状态，并让队友重新决策，查看他的状态
@@ -3792,8 +3832,25 @@ class Tank2Team(Team):
                                 teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
                                 playerRiskyEnemyBattler = player.get_risky_enemy_battler()
                                 if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
-                                    shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙
+                                    shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙'''
 
+                #
+                # 如果遇到对手准备和队友对射 5cd364e4a51e681f0e921e7a
+                # 那么考虑直接破墙
+                #
+                # 敌方当前回合应该必定会还击，否则就失去了防御的意义
+                # 于是，随后就会遇到二对一且三方均没有炮弹
+                # 如果对方下回合不走，那么二打一直接干掉
+                # 如果对方下回合移动，那么攻击的队友就解除了威胁，可以继续前进
+                #
+                if (not teammate.has_status(Status.DEFENSIVE)
+                    and teammate.has_status(Status.ENCOUNT_ENEMY)
+                    and teammate.has_status(Status.READY_TO_FIGHT_BACK)
+                    ):
+                    teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
+                    playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                    if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
+                        shouldBreakBrick = True
 
                 if shouldBreakBrick:
                     returnActions[playerIdx] = action3
@@ -3806,7 +3863,10 @@ class Tank2Team(Team):
         # 不管对方为什么离开，都不亏，假如对方下一回合回头，我方就攻过去，假如对方是赶去支援
         # 我方上前，然后等待一回合后会触发强攻信号
         #
-        for idx, (player, action) in enumerate(zip(self.players, returnActions)):
+        # 这个策略已经不再适用了！ 5ce01b75d2337e01c7a11d4d
+        # 容易导致被敌人突击
+        #
+        '''for idx, (player, action) in enumerate(zip(self.players, returnActions)):
             if (Action.is_stay(action)
                 and not player.has_status(Status.HAS_ENEMY_BEHIND_BRICK)
                 and self.has_status_in_previous_turns(player, Status.HAS_ENEMY_BEHIND_BRICK, turns=1)
@@ -3817,8 +3877,7 @@ class Tank2Team(Team):
                     continue
                 if signal3 == Signal.READY_TO_BREAK_BRICK: # 可以破墙，则选择破墙
                     returnActions[idx] = action3
-                    hasTeamActions[idx] = True
-
+                    hasTeamActions[idx] = True'''
 
 
         # TODO: 主动破墙之二打一
@@ -3944,6 +4003,55 @@ class DecisionChain(DecisionMaker):
 
 
 
+#{ BEGIN 'decision/single/leave_teammate.py' }#
+
+class LeaveTeammateDecision(SingleDecisionMaker):
+    """
+    处理两人重叠的情况
+    --------------------
+
+    1. 尝试采用安全的移动行为离开队友
+    2. 避免和队友采用相同的移动方向
+    3. 尽量往不导致进攻路线增加的方向移动
+
+    """
+    def _make_decision(self):
+
+        player   = self._player
+        signal   = self._signal
+        map_     = player._map
+        battler  = player.battler
+        teammate = player.teammate
+
+
+        if signal == Signal.SHOULD_LEAVE_TEAMMATE:
+
+            actions = []
+            for action in battler.get_all_valid_move_action():
+                if not Action.is_move(player.try_make_decision(action)): # 存在风险
+                    continue
+                if action == teammate.get_current_decision(): # 不能与队友的移动方向相同！
+                    continue
+                actions.append(action)
+
+            if len(actions) == 0: # 没有合理的离开行为 ...
+                return ( Action.STAY, Signal.CANHANDLED )
+
+            route1 = battler.get_shortest_attacking_route()
+            deltaLengths = {} #  action -> deltaLength
+            for action in actions:
+                with map_.simulate_one_action(battler, action):
+                    route2 = battler.get_shortest_attacking_route() # 必定有路？
+                    deltaLengths[action] = route2.length - route1.length # 移动后进攻路线短变短者值小
+
+            action = min( deltaLengths.items(), key=lambda kv: kv[1] )[0]
+            player.set_status(Status.READY_TO_LEAVE_TEAMMATE)
+            return ( action, Signal.READY_TO_LEAVE_TEAMMATE )
+
+#{ END 'decision/single/leave_teammate.py' }#
+
+
+
 #{ BEGIN 'decision/single/attack_base.py' }#
 
 class AttackBaseDecision(SingleDecisionMaker):
@@ -3983,17 +4091,30 @@ class EncountEnemyDecision(SingleDecisionMaker):
         map_ = player._map
         tank = player.tank
         battler = player.battler
+        teammate = player.teammate
 
         aroundEnemies = battler.get_enemies_around()
         if len(aroundEnemies) > 0:
             player.set_status(Status.ENCOUNT_ENEMY)
             if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
-                assert len(aroundEnemies) == 2
+                assert len(aroundEnemies) == 2 # 可能会遇到极其罕见的三人重叠
+
                 # 首先判断是否为真正的双人夹击
                 enemy1, enemy2 = aroundEnemies
                 x, y = tank.xy
                 x1, y1 = enemy1.xy
                 x2, y2 = enemy2.xy
+
+                # 先判断敌人是否重叠，如果是，那么很有可能直接击杀！
+                if (x1, y1) == (x2, y2):
+                    if (not teammate.defeated # 队友还没有死，自己可以考虑牺牲
+                        and battler.canShoot
+                        ):
+                        player.set_status(Status.ENCOUNT_TWO_ENEMY)
+                        player.set_status(Status.READY_TO_DOUBLE_KILL_ENEMIES)
+                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                        return battler.shoot_to(enemy1)
+
                 if x1 == x2 == x:
                     if (y > y1 and y > y2) or (y < y1 and y < y2):
                         player.set_status(Status.ENCOUNT_ONE_ENEMY)
@@ -4622,6 +4743,71 @@ class BaseDefenseDecision(SingleDecisionMaker):
 
 
 
+#{ BEGIN 'decision/single/behind_brick.py' }#
+
+class BehindBrickDecision(SingleDecisionMaker):
+    """
+    适用于在墙后和敌人僵持时的决策
+
+    """
+    def _make_decision(self):
+
+        player = self._player
+        signal = self._signal
+        battler = player.battler
+
+        # (inserted) 准备破墙信号
+        #--------------------------
+        # 触发条件：
+        #
+        #   1. 对应于双方对峙，我方开好后路后触发某些条件强制破墙
+        #   2. 对方刚刚从墙后移开，我方存在后路，这个时候强制破墙
+        #
+        # 收到这个信号的时候，首先检查是否可以闪避
+        #
+        #   1. 如果可以闪避，就返回可以破墙的信号
+        #   2. 如果不可以闪避，就返回这回合准备后路的信号
+        #
+        if signal == Signal.PREPARE_FOR_BREAK_BRICK:
+            player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
+            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
+            attackAction = battler.get_next_attack_action()
+            oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
+
+            '''_undoRevertTurns = 0
+            while oppTank is None: #　对应于敌方刚离开的那种触发条件
+                # 可能存在多轮回滚，因为别人的策略和我们的不一样！
+                # 给别人回滚的时候必须要考虑多回合！
+                map_.revert()
+                _undoRevertTurns += 1
+                oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)'''
+
+            player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
+            assert oppTank is not None
+            dodgeActions = battler.try_dodge(oppTank)
+            if len(dodgeActions) == 0:
+                # 准备凿墙
+                breakBrickActions = battler.break_brick_for_dodge(oppTank)
+                if len(breakBrickActions) == 0: # 两边均不是土墙
+                    res = ( Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
+                else:
+                    player.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
+                    res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
+            else:
+                # 可以闪避，那么回复团队一条消息，下一步是破墙动作
+                shootAction = battler.shoot_to(oppTank)
+                player.set_status(Status.READY_TO_BREAK_BRICK)
+                res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
+
+            '''for _ in range(_undoRevertTurns):
+                map_.undo_revert()'''
+
+            return res
+
+#{ END 'decision/single/behind_brick.py' }#
+
+
+
 #{ BEGIN 'decision/single/active_defense.py' }#
 
 class ActiveDefenseDecision(SingleDecisionMaker):
@@ -4695,7 +4881,6 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                     #
                     enemyAttackRoute1 = oppBattler.get_shortest_attacking_route(ignore_enemies=True, bypass_enemies=False)
                     enemyAttackRoute2 = oppBattler.get_shortest_attacking_route(ignore_enemies=False, bypass_enemies=True)
-                    debug_print(enemyAttackRoute1.length, enemyAttackRoute2.length)
                     if enemyAttackRoute2.length > enemyAttackRoute1.length: # 路线增长，说明是必经之路
                         player.set_status(Status.ACTIVE_DEFENSIVE)
                         player.set_status(Status.READY_TO_BLOCK_ROAD)
@@ -5001,54 +5186,6 @@ class MarchingDecision(SingleDecisionMaker):
         battler = player.battler
 
 
-        # (inserted) 准备破墙信号
-        #--------------------------
-        # 触发条件：
-        #
-        #   1. 对应于双方对峙，我方开好后路后触发某些条件强制破墙
-        #   2. 对方刚刚从墙后移开，我方存在后路，这个时候强制破墙
-        #
-        # 收到这个信号的时候，首先检查是否可以闪避
-        #
-        #   1. 如果可以闪避，就返回可以破墙的信号
-        #   2. 如果不可以闪避，就返回这回合准备后路的信号
-        #
-        if signal == Signal.PREPARE_FOR_BREAK_BRICK:
-            player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
-            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
-            attackAction = battler.get_next_attack_action()
-            oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
-
-            _undoRevertTurns = 0
-            while oppTank is None: #　对应于敌方刚离开的那种触发条件
-                # 可能存在多轮回滚，因为别人的策略和我们的不一样！
-                # 给别人回滚的时候必须要考虑多回合！
-                map_.revert()
-                _undoRevertTurns += 1
-                oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
-
-            player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
-            assert oppTank is not None
-            dodgeActions = battler.try_dodge(oppTank)
-            if len(dodgeActions) == 0:
-                # 准备凿墙
-                breakBrickActions = battler.break_brick_for_dodge(oppTank)
-                if len(breakBrickActions) == 0: # 两边均不是土墙
-                    res = (  Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
-                else:
-                    player.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
-                    res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
-            else:
-                # 可以闪避，那么回复团队一条消息，下一步是破墙动作
-                shootAction = battler.shoot_to(oppTank)
-                player.set_status(Status.READY_TO_BREAK_BRICK)
-                res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
-
-            for _ in range(_undoRevertTurns):
-                map_.undo_revert()
-
-            return res
-
         # (inserted) 强攻信号
         #-------------------------
         if signal == Signal.FORCED_MARCH:
@@ -5072,7 +5209,15 @@ class MarchingDecision(SingleDecisionMaker):
             if leadingLength <= 0:
                 allowedDelay = 0 # 不必别人领先的情况下，就不要 delay 了 ...
             else:
-                allowedDelay = leadingLength - 1 # 否则允许延迟至比对手慢一步
+                allowedDelay = leadingLength # 允许和对手同时到达，但由于我方先手，实际上应该是领先的
+
+        #
+        # 在我方地盘时，优先从边路攻击
+        # 到达敌方场地，优先从中路攻击
+        #
+        # 5cde18e7d2337e01c79f47c8
+        #
+        isMiddleFirst = battler.is_in_enemy_site()
 
 
         returnAction = Action.STAY # 将会返回的行为，默认为 STAY
@@ -5085,7 +5230,7 @@ class MarchingDecision(SingleDecisionMaker):
             # for route in battler.get_all_shortest_attacking_routes(): # 目的是找到一个不是停留的动作，避免浪费时间
             # for route in sorted_routes_by_enemy_effect(
             #                 battler.get_all_shortest_attacking_routes(delay=allowedDelay), player ):
-            for route in sorted( battler.get_all_shortest_attacking_routes(delay=allowedDelay),
+            for route in sorted( battler.get_all_shortest_attacking_routes(delay=allowedDelay, middle_first=isMiddleFirst),
                                     key=lambda r: estimate_enemy_effect_on_route(r, player) ):
 
                 # 首先清除可能出现的状态，也就是导致 stay 的状况
@@ -5094,9 +5239,21 @@ class MarchingDecision(SingleDecisionMaker):
                                     Status.HAS_ENEMY_BEHIND_BRICK )
 
                 attackAction = battler.get_next_attack_action(route)
+
+                if Action.is_stay(attackAction): # 下一步是停留，就没必要过多判断了
+                    returnAction = attackAction
+                    raise OUTER_BREAK
+
                 realAction = player.try_make_decision(attackAction)
                 if Action.is_stay(realAction): # 存在风险
                     if Action.is_move(attackAction):
+
+                        # 特殊情况，如果下下回合就要打掉对方基地
+                        # 那就没必要乱跑了 5cddde4dd2337e01c79f0ba3
+                        #
+                        if battler.is_face_to_enemy_base():
+                            returnAction = realAction
+                            raise OUTER_BREAK
 
                         # (inserted) 主动打破僵局：因为遇到敌人，为了防止被射杀而停留
                         # 注：
@@ -5107,8 +5264,17 @@ class MarchingDecision(SingleDecisionMaker):
                             ): # 即将停留第二回合
                             oppBattler = BattleTank(player.get_risk_enemy())
                             oppPlayer = Tank2Player(oppBattler)
+                            #
+                            # 判断敌人不会攻击我的标准
+                            #
+                            # 1. 敌人当前回合可以射击
+                            # 2。 敌人上回合也可以射击
+                            # 3. 敌人上回合与上上回合的行为相同，也就是已经连续移动了两个回合或者等待了两个回合
+                            #    这个补充条件非常重要 5cde71a4d2337e01c79f9a77
+                            #
                             if (oppBattler.canShoot # 当回合可以射击
                                 and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
+                                and oppPlayer.get_previous_action(back=1) == oppPlayer.get_previous_action(back=2)
                                 ): # 说明敌人大概率不打算攻击我
                                 if (Action.is_move(oppPlayer.get_previous_action(back=1))
                                     and battler.get_manhattan_distance_to(oppBattler) == 2
@@ -5124,6 +5290,7 @@ class MarchingDecision(SingleDecisionMaker):
                         # 停着就是在浪费时间，不如选择进攻
                         #
                         fields = battler.get_destroyed_fields_if_shoot(attackAction)
+
                         #
                         # 如果当前回合射击可以摧毁的对象中，包含自己最短路线上的块
                         # 那么就射击
@@ -5166,15 +5333,16 @@ class MarchingDecision(SingleDecisionMaker):
                             and battler.is_in_enemy_site()  # 只有在对方基地的时候才有效
                             ):
                             for field in fields:
-                                if isinstance(field, BrickField):
-                                    if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 相当于土墙
-                                        action = player.try_make_decision(battler.shoot_to(field))
-                                        if Action.is_shoot(action):
-                                            # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
-                                            player.set_status(Status.WAIT_FOR_MARCHING)
-                                            player.set_status(Status.PREVENT_BEING_KILLED)
-                                            returnAction = action
-                                            raise OUTER_BREAK
+                                if (isinstance(field, BrickField)
+                                    and battler.get_manhattan_distance_to(field) == 2 # 距离为 2 相当于土墙
+                                    and battler.canShoot
+                                    ):
+                                    # 这个信号是他现在的真实体现，可以用来触发团队破墙信号
+                                    player.set_status(Status.WAIT_FOR_MARCHING)
+                                    player.set_status(Status.PREVENT_BEING_KILLED)
+                                    player.set_status(Status.READY_TO_CLEAR_A_ROAD_FIRST)
+                                    returnAction = battler.shoot_to(field)
+                                    raise OUTER_BREAK
 
 
                     elif Action.is_shoot(attackAction):
@@ -5218,7 +5386,7 @@ class MarchingDecision(SingleDecisionMaker):
                     #   还可以选择绕路？
 
 
-                #
+
                 # 预判一步，如果下一步会遇到敌人，并且不得不回头闪避的话，就考虑先摧毁与自己中间相差一格的墙（如果存在）
                 # 类似于主动防御的情况
                 #
@@ -5232,8 +5400,8 @@ class MarchingDecision(SingleDecisionMaker):
                             if len(enemies) == 0: # 没有敌人根本不需要预判
                                 _needToBreakWallFirst = False
                             else:
-                                route1 = battler.get_shortest_attacking_route()
                                 with outer_label() as OUTER_BREAK:
+                                    route1 = battler.get_shortest_attacking_route()
                                     for enemy in battler.get_enemies_around():
                                         for action in battler.try_dodge(enemy):
                                             with map_.simulate_one_action(battler, action):
@@ -5249,8 +5417,9 @@ class MarchingDecision(SingleDecisionMaker):
                                     if battler.get_manhattan_distance_to(field) == 2: # 距离为 2 的土墙
                                         if battler.canShoot:
                                             player.set_status(Status.WAIT_FOR_MARCHING)
+                                            player.set_status(Status.READY_TO_CLEAR_A_ROAD_FIRST)
                                             returnAction = shootAction # 不检查安全性
-                                            break
+                                            raise OUTER_BREAK
 
                         if _needToBreakWallFirst: # 需要射击但是前面没有射击，那么就等待
                             player.set_status(Status.WAIT_FOR_MARCHING)
@@ -5287,6 +5456,7 @@ class MarchingDecision(SingleDecisionMaker):
                     # 事实上 1 个空格是不够的！ 5cd35e08a51e681f0e92182e
                     #
                     _shouldStay = False
+                    oppBattler  = None
 
                     enemy = battler.get_enemy_behind_brick(realAction, interval=-1)
                     if enemy is not None: # 墙后有人，不能射击
@@ -5312,6 +5482,19 @@ class MarchingDecision(SingleDecisionMaker):
                                             player.set_status(Status.WAIT_FOR_MARCHING)
                                             _shouldStay = True
                                             raise OUTER_BREAK
+
+                    #
+                    # 并不是一定不能破墙，需要检查敌人是否真的有威胁 5ce209c1d2337e01c7a36a0a
+                    #
+                    # 此处应该交给强攻信号处理？
+                    #
+                    if _shouldStay and oppBattler is not None:
+                        teammateBattler = player.teammate.battler
+                        for enemy in teammateBattler.get_enemies_around():
+                            if enemy is oppBattler.tank: # 被队友牵制的敌人可以忽略
+                                _shouldStay = False
+                                break
+
 
                     if _shouldStay:
                         # 先尝试 shoot 转 move

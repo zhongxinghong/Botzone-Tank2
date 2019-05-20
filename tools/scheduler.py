@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:38:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-16 17:32:22
+# @Last Modified time: 2019-05-19 00:48:44
 """
 定时任务调度器
 ---------------------
@@ -12,7 +12,7 @@
 定时任务
 ------------
 1. 每  6 小时 重新登录一次，保证 cookies 有效
-2. 每 15 分钟 下载一次目标 bot 的天梯对局记录
+2. 每 10 分钟 下载一次目标 bot 的天梯对局记录
 3. 每  2 分钟 下载一次有目标 bot 参加的全局对局记录
 
 开机任务
@@ -43,7 +43,7 @@ def main():
     scheduler = BackgroundScheduler()
 
     scheduler.add_job(task_botzone_login, "interval", hours=6, id="botzone_login")
-    scheduler.add_job(task_download_rank_matches, "interval", minutes=15, id="download_rank_matches")
+    scheduler.add_job(task_download_rank_matches, "interval", minutes=10, id="download_rank_matches")
     scheduler.add_job(task_download_global_matches, "interval", minutes=2, id="download_global_matches")
 
     scheduler.start()

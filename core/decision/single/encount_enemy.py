@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 18:16:25
+# @Last Modified time: 2019-05-20 06:14:09
 
 __all__ = [
 
@@ -30,17 +30,30 @@ class EncountEnemyDecision(SingleDecisionMaker):
         map_ = player._map
         tank = player.tank
         battler = player.battler
+        teammate = player.teammate
 
         aroundEnemies = battler.get_enemies_around()
         if len(aroundEnemies) > 0:
             player.set_status(Status.ENCOUNT_ENEMY)
             if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
-                assert len(aroundEnemies) == 2
+                assert len(aroundEnemies) == 2 # 可能会遇到极其罕见的三人重叠
+
                 # 首先判断是否为真正的双人夹击
                 enemy1, enemy2 = aroundEnemies
                 x, y = tank.xy
                 x1, y1 = enemy1.xy
                 x2, y2 = enemy2.xy
+
+                # 先判断敌人是否重叠，如果是，那么很有可能直接击杀！
+                if (x1, y1) == (x2, y2):
+                    if (not teammate.defeated # 队友还没有死，自己可以考虑牺牲
+                        and battler.canShoot
+                        ):
+                        player.set_status(Status.ENCOUNT_TWO_ENEMY)
+                        player.set_status(Status.READY_TO_DOUBLE_KILL_ENEMIES)
+                        player.set_status(Status.READY_TO_FIGHT_BACK)
+                        return battler.shoot_to(enemy1)
+
                 if x1 == x2 == x:
                     if (y > y1 and y > y2) or (y < y1 and y < y2):
                         player.set_status(Status.ENCOUNT_ONE_ENEMY)

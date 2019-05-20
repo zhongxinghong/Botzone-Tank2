@@ -114,6 +114,10 @@
     },
     {
         "package": "decision/single",
+        "file": "../core/decision/single/leave_teammate.py"
+    },
+    {
+        "package": "decision/single",
         "file": "../core/decision/single/attack_base.py"
     },
     {
@@ -127,6 +131,10 @@
     {
         "package": "decision/single",
         "file": "../core/decision/single/base_defense.py"
+    },
+    {
+        "package": "decision/single",
+        "file": "../core/decision/single/behind_brick.py"
     },
     {
         "package": "decision/single",

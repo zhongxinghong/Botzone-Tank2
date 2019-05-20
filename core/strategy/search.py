@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 17:38:29
+# @Last Modified time: 2019-05-20 05:52:12
 """
 BFS 搜索最短路径的工具库
 
@@ -198,17 +198,17 @@ def _BFS_search_all_routes_for_move(start, end, map_matrix_T, weight_matrix_T,
 
         x, y = node[0]
 
+        if (x, y) == end: # 到达终点
+            _foundRoute = True
+            yield Route(node)
+            continue
+
         if matrixMarked[x, y]:
             continue
         matrixMarked[x, y] = True
 
         if DEBUG_MODE:
             matrixDistance[x, y] = _get_route_length_by_node_chain(node)
-
-        if (x, y) == end: # 到达终点
-            _foundRoute = True
-            yield Route(node)
-            continue
 
         for dx, dy in get_searching_directions(x1, x2, y1, y2,
                                                x_axis_first=x_axis_first,
@@ -247,12 +247,9 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
 
     实现思路：
 
-    首先，我们可以认为，射击的方式能够比移动的方式更快地接近目标，毕竟炮弹是飞行的。
-    而能够直接向目标发动射击的位置，仅仅位于与它同一行或同一列的位置上，因此，搜索的思路是，
-    对于所有可以向目标发起进攻的坐标，分别找到从起点移动到这些坐标的最短路径，然后接着以射击
-    的方式，找到从这些射击点到达目标点的路径（这种路径可以抽象地认为是炮弹飞行的路径），
-    然后从中找到最短的一条路径（对于射击来讲，距离可以理解为就是开炮和冷却的回合），
-    该路径即为所求的。
+    通过射击的方式能够比单纯通过移动的方式更快地接近目标，这是显而易见的，毕竟炮弹可以飞行。
+    于是，将地图划分为两个区域，一个是可以发动射击的区域，它们仅仅与目标处在同一行或同一列的位置上
+    另一个就是常规的移动可达的区域。搜索过程中对着两种情况下相应的节点权重做区分对待即可。
 
     ---------------------------------------------------------------------------
 
@@ -353,16 +350,14 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         ]
 
     queue  = deque() # queue( [Node] )
-    matrixMarked = np.zeros_like(matrixMap, dtype=np.bool8)
-    canShootNodeChains = {} # { (x, y): Node } 从 start 到每一个可射击点的最短路线
+    matrixMarked  = np.zeros_like(matrixMap, dtype=np.bool8) # 标记移动到的位置
 
     if DEBUG_MODE:
         matrixDistance = np.full_like(matrixMap, -1)
 
     queue.append(startNode) # init
 
-
-    ## 首先通过常规的 BFS 搜索，确定到达每一个射击点的最短路径
+    _foundRoute = False
 
     while len(queue) > 0:
 
@@ -375,87 +370,75 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
 
         x, y = node[0]
 
-        if matrixMarked[x, y]:
+        if (x, y) == end:
+            _foundRoute = True
+            yield Route(node)
             continue
-        matrixMarked[x, y] = True
 
-        if matrixCanShoot[x, y]:
-            canShootNodeChains[(x, y)] = node  # 记录最短节点
-            continue  # 然后就不要继续找这个节点了！
+        if matrixCanShoot[x, y]: # 如果当前处在射击区域
 
-        if DEBUG_MODE:
-            matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+            # 因为在射击区域中，行为的方向都是单向的，不会出现从射击区域进入移动区域，
+            # 或者从射击的下一步移动回到上一步的情况，
+            # 因此没有必要对射击行为已到达过的节点位置进行检查和标记
 
-        for dx, dy in get_searching_directions(x1, y1, x2, y2,
-                                               x_axis_first=x_axis_first,
-                                               middle_first=middle_first):
-            x, y = node[0]
+            if DEBUG_MODE:
+                matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+
+            # 确定射击方向
+            dx = np.sign(x2 - x)
+            dy = np.sign(y2 - y)
             x3 = x + dx
             y3 = y + dy
-            if (not (0 <= x3 < width and 0 <= y3 < height) # not in map
-                or not matrixCanMoveTo[x3, y3]
-                ):
-                continue
 
-            weight = matrixMoveWeight[x3, y3]
-            if weight == INFINITY_WEIGHT:
-                continue
-
-            queue.append([
-                (x3, y3),
-                node,
-                weight-1,
-                weight,
-                MOVE_ACTION,
-                ])
-
-    #if start == (5, 6):
-    #    debug_print("distance matrix:\n", matrixDistance.T)
-
-
-    ## 接下来对于每个节点，尝试通过射击的方式走完剩下的路程
-
-    routes = []
-
-    for xy, node in canShootNodeChains.items():
-
-        # 确定攻击方向
-        x3, y3 = xy
-        dx = np.sign(x2 - x3)
-        dy = np.sign(y2 - y3)
-
-        while True:
-
-            if (x3, y3) == end: # 到达目标
-                routes.append( Route(node) )
-                break
-
-            x3 += dx
-            y3 += dy
             weight = matrixShootWeight[x3, y3]
 
-            node = [ # 走到下一个节点
-                (x3, y3),
+            nextNode = [  # 必定可以保证下一个节点仍然处在射击区域，不会到达地图外，
+                (x3, y3), # 并且下次还会继续进入这个分支，除非已经到达基地
                 node,
                 weight-1, # 补偿
                 weight,
-                SHOOT_ACTION,
+                SHOOT_ACTION, # 标志着上一步处在射击区域内
                 ]
 
+            if weight == 0: # 射击的过渡动作，下一个动作和当前动作同时发生
+                queue.appendleft(nextNode) # 添加到开头，下回合马上继续
+            else:
+                queue.append(nextNode)
 
-    # debug_print( [_get_route_length_by_node_chain(node) for node in reachTargetNodeChains] )
+        else: # 否则为非射击区域，属于常规移动区域
 
-    ## 找到最短的路径
+            if matrixMarked[x, y]: # 只对移动区域进行标记
+                continue
+            matrixMarked[x, y] = True
 
-    #if len(reachTargetNodeChains) > 0: # BUG Fix: 只有在存在路线的情况下才能用 min
-        '''dummyTail[1] = min(reachTargetNodeChains, # 最短路径
-                        key=lambda node: _get_route_length_by_node_chain(node))
-        '''
-    if len(routes) == 0:
-        yield Route()
-    else:
-        routes.sort(key=lambda route: route.length)
-        yield from routes
+            if DEBUG_MODE:
+                matrixDistance[x, y] = _get_route_length_by_node_chain(node)
+
+            for dx, dy in get_searching_directions(x1, y1, x2, y2,
+                                                   x_axis_first=x_axis_first,
+                                                   middle_first=middle_first):
+                x3 = x + dx
+                y3 = y + dy
+
+                if (not (0 <= x3 < width and 0 <= y3 < height) # not in map
+                    or not matrixCanMoveTo[x3, y3]
+                    ):
+                    continue
+
+                weight = matrixMoveWeight[x3, y3]
+                if weight == INFINITY_WEIGHT:
+                    continue
+
+                queue.append([
+                    (x3, y3),
+                    node,
+                    weight-1,
+                    weight,
+                    MOVE_ACTION, # 标志着上一步处在非射击区域内
+                    ])
+
+    if not _foundRoute:
+        yield Route() # 空节点
 
 
 def find_all_routes_for_move(start, end, matrix_T,
@@ -515,7 +498,7 @@ def find_all_routes_for_shoot(start, end, matrix_T,
     routes = _BFS_search_all_routes_for_shoot(
                     start, end, matrixMap, matrixMoveWeight, matrixShootWeight,
                     block_types=block_types, destroyable_types=destroyable_types,
-                    x_axis_first=x_axis_first, middle_first=False)
+                    x_axis_first=x_axis_first, middle_first=middle_first)
 
     yield from routes
 

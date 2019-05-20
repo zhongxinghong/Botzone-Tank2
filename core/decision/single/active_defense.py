@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:03:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-17 05:36:14
+# @Last Modified time: 2019-05-20 09:31:35
 
 __all__ = [
 
@@ -93,7 +93,6 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                     #
                     enemyAttackRoute1 = oppBattler.get_shortest_attacking_route(ignore_enemies=True, bypass_enemies=False)
                     enemyAttackRoute2 = oppBattler.get_shortest_attacking_route(ignore_enemies=False, bypass_enemies=True)
-                    debug_print(enemyAttackRoute1.length, enemyAttackRoute2.length)
                     if enemyAttackRoute2.length > enemyAttackRoute1.length: # 路线增长，说明是必经之路
                         player.set_status(Status.ACTIVE_DEFENSIVE)
                         player.set_status(Status.READY_TO_BLOCK_ROAD)

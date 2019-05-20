@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 22:14:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-03 16:53:07
+# @Last Modified time: 2019-05-20 07:13:31
 """
 消息与信号
 
@@ -40,6 +40,9 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
 
     FORCED_MARCH                     = 17  # 团队信号，强制行军
     READY_TO_FORCED_MARCH            = 18  # 队员信号，准备强制行军
+
+    SHOULD_LEAVE_TEAMMATE            = 19  # 团队信号，需要和队友打破重叠
+    READY_TO_LEAVE_TEAMMATE          = 20  # 队员信号，准备和队友打破重叠
 
 
     BREAK_SIGNALS = ( UNHANDLED, CANHANDLED )

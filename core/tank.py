@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-17 06:44:23
+# @Last Modified time: 2019-05-20 10:27:00
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -68,6 +68,10 @@ class BattleTank(object):
         return self._tank
 
     @property
+    def tank(self):
+        return self._tank
+
+    @property
     def side(self):
         return self._tank.side
 
@@ -97,14 +101,14 @@ class BattleTank(object):
 
     def is_in_our_site(self):
         """
-        是否处于我方半边的地图，包含中线
+        是否处于我方半边的地图，不包含中线
         """
         base = self._map.bases[self.side]
-        return ( np.abs( self.y - base.y ) <= 4 )
+        return ( np.abs( self.y - base.y ) < 4 )
 
     def is_in_enemy_site(self):
         """
-        是否处于地方半边的地图，不包含中线
+        是否处于地方半边的地图，包含中线
         """
         return not self.is_in_our_site()
 
@@ -163,7 +167,7 @@ class BattleTank(object):
         """
         return self.get_all_valid_move_action() + self.get_all_valid_shoot_action() + [ Action.STAY ]
 
-    def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0):
+    def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0, **kwargs):
         """
         获得所有最短的进攻路线
 
@@ -206,7 +210,8 @@ class BattleTank(object):
                         destroyable_types=DEFAULT_DESTROYABLE_TYPES+(
                             Field.BASE + 1 + oppSide,
                             # 不将敌方坦克加入到其中
-                        ))
+                        ),
+                        **kwargs)
 
         minLength = INFINITY_ROUTE_LENGTH
 
