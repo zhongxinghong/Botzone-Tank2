@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-21 21:04:43
+# @Last Modified time: 2019-05-22 16:17:12
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -454,6 +454,9 @@ class Tank2Player(Player):
 
         if not battler.canShoot:
             self.set_status(Status.RELOADING)
+
+        if battler.is_face_to_enemy_base(ignore_brick=True):
+            self.set_status(Status.FACING_TO_ENEMY_BASE)
 
 
         decisions = DecisionChain(

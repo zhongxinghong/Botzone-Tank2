@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:46:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 08:31:54
+# @Last Modified time: 2019-05-22 19:29:39
 
 __all__ = [
 
@@ -14,7 +14,6 @@ from ..abstract import SingleDecisionMaker
 from ...utils import debug_print
 from ...action import Action
 from ...strategy.status import Status
-from ...strategy.signal import Signal
 from ...strategy.label import Label
 from ...strategy.evaluate import evaluate_aggressive
 
@@ -72,8 +71,33 @@ class OverlappingDecision(SingleDecisionMaker):
             if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
                 and player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=3)
                 and all( Action.is_stay(player.get_previous_action(_back)) for _back in range(1, 3+1) )
-                ): # 如果和一个带有 stay 标记的敌人僵持超过 3 回合，就把这个标记移除，因为它此时已经不是一个会和我马上打破重叠的敌人了
+                ): # 如果和一个带有跟随重叠标记的敌人僵持超过 3 回合，就把这个标记移除，因为它此时已经不是一个会和我马上打破重叠的敌人了
                 oppPlayer.remove_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 5ce3c990d2337e01c7a54b4c
+
+            if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
+                and Action.is_shoot(player.get_previous_action(back=1))
+                and Action.is_shoot(oppPlayer.get_previous_action(back=1))
+                # TODO: 是否有必要判断射击方向相同？
+                ): # 如果和一个带有跟随重叠标记的敌人在同一回合采用射击的方式打破重叠，则对这个行为进一步标记
+                oppPlayer.add_labels(Label.SIMULTANEOUSLY_SHOOT_TO_BREAK_OVERLAP)
+
+            #
+            # (inserted) 如果敌人带有立即打破重叠的标记，那么如果还能执行到这个地方，就意味着敌人
+            # 上次打破重叠的方向是回防（如果是进攻，那么应该不会再有机会遭遇）
+            #
+            # 那么在此处重新进入重叠的时候，尝试将对手击杀
+            #
+            if not status == Status.DEFENSIVE: # 防御模式不触发？
+                if (oppPlayer.has_label(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
+                    and not player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY) # 上回合不重叠
+                    ):
+                    action = battler.get_next_attack_action()
+                    if Action.is_move(action):
+                        if battler.canShoot:
+                            player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                              Status.ATTEMPT_TO_KILL_ENEMY)
+                            return action + 4
+
 
             # 是否已经有多回合僵持，应该主动打破重叠
             _shouldBreakOverlap = (
@@ -208,14 +232,24 @@ class OverlappingDecision(SingleDecisionMaker):
                             # 主要是为了确定方向
                             oppAction %= 4
 
-                            # 首先先检查对方是否会跟随我，优先击杀
+                            # 首先先检查对方是否会跟随我
                             #--------------------------
-                            if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
-                                and battler.canShoot # 这回合可以射击，则改为射击
-                                ):
-                                player.set_status(Status.READY_TO_BREAK_OVERLAP,
-                                                  Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
-                                return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
+                            # 1. 如果我方可以射击，对方不能射击，那么按照之前的经验，对方下回合会移动
+                            #    这个时候尝试击杀
+                            #
+                            if oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY):
+                                if battler.canShoot: # 这回合可以射击，则改为射击
+                                    if (oppPlayer.has_label(Label.SIMULTANEOUSLY_SHOOT_TO_BREAK_OVERLAP)
+                                        and oppBattler.canShoot # 如果带有这个标记，那么这回合就不要射击了，等待敌人打完这回合，
+                                        ): # 下回合才有可能击杀 5ce50cd9d2337e01c7a6e45a
+                                        player.set_status(Status.KEEP_ON_OVERLAPPING)
+                                        return Action.STAY
+                                    else: # 否则就考虑反身射击
+                                        player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                                          Status.ATTEMPT_TO_KILL_ENEMY) # 尝试击杀敌军
+                                        return oppAction + 4
+                                else:
+                                    pass # 均不能射击，那么将判定为没有风险。那就一起移动
 
                             # 正常情况下选择堵路
                             #----------------------

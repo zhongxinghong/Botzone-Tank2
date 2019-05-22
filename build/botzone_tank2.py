@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @author:      Rabbit
 # @filename:    botzone_tank2.py
-# @date:        2019-05-22 08:32:02
+# @date:        2019-05-22 19:53:32
 # @site:        https://github.com/zhongxinghong/Botzone-Tank2
 # @description: Automatically built Python single-file script for Botzone/Tank2 game
 """
@@ -858,12 +858,13 @@ class Tank2Map(Map, metaclass=SingletonMeta):
 
         """
         try:
-            self.revert()
+            success = self.revert()
             yield
         except Exception as e:
             raise e
         finally:
-            self.undo_revert() # 回合结束后撤销回滚
+            if success:
+                self.undo_revert() # 回合结束后撤销回滚
 
     def undo_revert(self):
         """
@@ -1718,14 +1719,19 @@ class BattleTank(object):
         return []
 
 
-    def is_face_to_enemy_base(self):
+    def is_face_to_enemy_base(self, ignore_brick=False):
         """
-        是否直面对方基地，没有任何障碍阻挡，用于特殊决策！
+        是否直面对方基地，或者是与敌人基地处在同一条直线上
+
+        Input:
+            - ignore_brick   bool   是否忽略土墙，如果忽略，那么只需要基地和坦克
+                                    处在同一直线上即可
         """
         tank = self._tank
         map_ = self._map
         oppSide = 1 - tank.side
         oppBase = map_.bases[oppSide]
+
         x1, y1 = tank.xy
         x2, y2 = oppBase.xy
         for dx, dy in get_searching_directions(x1, y1, x2, y2):
@@ -1744,10 +1750,16 @@ class BattleTank(object):
                     field = fields[0]
                     if isinstance(field, (WaterField, EmptyField) ):
                         continue # 非 block 情况
+                    elif isinstance(field, BrickField):
+                        if ignore_brick:
+                            continue
+                        else:
+                            break
                     elif field is oppBase:
                         return True
                     else:
                         break
+
         return False
 
 
@@ -2024,15 +2036,16 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     READY_TO_CLEAR_A_ROAD_FIRST  = 36  # 进攻时预先清除与自己相隔一步的土墙
     READY_TO_DOUBLE_KILL_ENEMIES = 37  # 遇到敌人重叠在一起，尝试和两个敌人同归于尽
     READY_TO_LEAVE_TEAMMATE      = 38  # 准备和队友打破重叠
+    FACING_TO_ENEMY_BASE         = 39  # 正面敌人基地，或者和敌人基地处在同一直线上
 
     READY_TO_PREPARE_FOR_BREAK_BRICK = 41 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK             = 42 # 准备破墙
     READY_TO_BREAK_OVERLAP           = 43 # 准备主动打破重叠
     READY_TO_FORCED_MARCH            = 44 # 准备主动强攻
 
-    ANTICIPATE_TO_KILL_ENEMY = 50 # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
-    BLOCK_ROAD_FOR_OUR_BASE  = 51 # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间
-    SACRIFICE_FOR_OUR_BASE   = 52 # 主动防御时，遇到敌方下一炮打掉基地，自己又恰好能阻挡
+    ATTEMPT_TO_KILL_ENEMY   = 50 # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
+    BLOCK_ROAD_FOR_OUR_BASE = 51 # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间
+    SACRIFICE_FOR_OUR_BASE  = 52 # 主动防御时，遇到敌方下一炮打掉基地，自己又恰好能阻挡
 
 
     __Status_Name_Cache = None
@@ -2064,7 +2077,9 @@ class Label(object, metaclass=UniqueIntEnumMeta):
 
     NONE = 0
 
-    BREAK_OVERLAP_SIMULTANEOUSLY = 1   # 会和我同时打破重叠
+    BREAK_OVERLAP_SIMULTANEOUSLY          = 1  # 会和我同时打破重叠
+    SIMULTANEOUSLY_SHOOT_TO_BREAK_OVERLAP = 2  # 回合我方同时以射击的方式打破重叠
+    IMMEDIATELY_BREAK_OVERLAP_BY_MOVE     = 3  # 当敌人和我方坦克重叠时，对方立即与我打破重叠
 
 #{ END 'strategy/label.py' }#
 
@@ -3382,12 +3397,24 @@ class EncountEnemyDecision(SingleDecisionMaker):
             # ---------
             # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
             # 2. 敌人数量为 1
+            #
             if len(aroundEnemies) == 1:
                 oppTank = aroundEnemies[0]
             else: # len(aroundEnemies) == 2:
                 oppTank = battler.get_nearest_enemy()
             oppBattler = BattleTank(oppTank)
             oppPlayer = Tank2Player(oppBattler)
+
+            #
+            # (inserted) 判断上回合敌人是否和我重叠，用于标记敌人 5ce52a48d2337e01c7a714c7
+            #
+            if (player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                and not player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=2)
+                ): # 上回合刚刚进入重叠，这回合就被打破
+                with map_.rollback_to_previous():
+                    if oppTank is battler.get_overlapping_enemy():
+                        oppPlayer.add_labels(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
+
 
             # 根据当时的情况，评估侵略性
             status = evaluate_aggressive(battler, oppBattler)
@@ -3815,8 +3842,33 @@ class OverlappingDecision(SingleDecisionMaker):
             if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
                 and player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=3)
                 and all( Action.is_stay(player.get_previous_action(_back)) for _back in range(1, 3+1) )
-                ): # 如果和一个带有 stay 标记的敌人僵持超过 3 回合，就把这个标记移除，因为它此时已经不是一个会和我马上打破重叠的敌人了
+                ): # 如果和一个带有跟随重叠标记的敌人僵持超过 3 回合，就把这个标记移除，因为它此时已经不是一个会和我马上打破重叠的敌人了
                 oppPlayer.remove_labels(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 5ce3c990d2337e01c7a54b4c
+
+            if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY)
+                and Action.is_shoot(player.get_previous_action(back=1))
+                and Action.is_shoot(oppPlayer.get_previous_action(back=1))
+                # TODO: 是否有必要判断射击方向相同？
+                ): # 如果和一个带有跟随重叠标记的敌人在同一回合采用射击的方式打破重叠，则对这个行为进一步标记
+                oppPlayer.add_labels(Label.SIMULTANEOUSLY_SHOOT_TO_BREAK_OVERLAP)
+
+            #
+            # (inserted) 如果敌人带有立即打破重叠的标记，那么如果还能执行到这个地方，就意味着敌人
+            # 上次打破重叠的方向是回防（如果是进攻，那么应该不会再有机会遭遇）
+            #
+            # 那么在此处重新进入重叠的时候，尝试将对手击杀
+            #
+            if not status == Status.DEFENSIVE: # 防御模式不触发？
+                if (oppPlayer.has_label(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
+                    and not player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY) # 上回合不重叠
+                    ):
+                    action = battler.get_next_attack_action()
+                    if Action.is_move(action):
+                        if battler.canShoot:
+                            player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                              Status.ATTEMPT_TO_KILL_ENEMY)
+                            return action + 4
+
 
             # 是否已经有多回合僵持，应该主动打破重叠
             _shouldBreakOverlap = (
@@ -3951,14 +4003,24 @@ class OverlappingDecision(SingleDecisionMaker):
                             # 主要是为了确定方向
                             oppAction %= 4
 
-                            # 首先先检查对方是否会跟随我，优先击杀
+                            # 首先先检查对方是否会跟随我
                             #--------------------------
-                            if (oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY) # 带有同时打破重叠标记的敌人
-                                and battler.canShoot # 这回合可以射击，则改为射击
-                                ):
-                                player.set_status(Status.READY_TO_BREAK_OVERLAP,
-                                                  Status.ANTICIPATE_TO_KILL_ENEMY) # 尝试击杀敌军
-                                return ( oppAction + 4 , Signal.READY_TO_BREAK_OVERLAP )
+                            # 1. 如果我方可以射击，对方不能射击，那么按照之前的经验，对方下回合会移动
+                            #    这个时候尝试击杀
+                            #
+                            if oppPlayer.has_label(Label.BREAK_OVERLAP_SIMULTANEOUSLY):
+                                if battler.canShoot: # 这回合可以射击，则改为射击
+                                    if (oppPlayer.has_label(Label.SIMULTANEOUSLY_SHOOT_TO_BREAK_OVERLAP)
+                                        and oppBattler.canShoot # 如果带有这个标记，那么这回合就不要射击了，等待敌人打完这回合，
+                                        ): # 下回合才有可能击杀 5ce50cd9d2337e01c7a6e45a
+                                        player.set_status(Status.KEEP_ON_OVERLAPPING)
+                                        return Action.STAY
+                                    else: # 否则就考虑反身射击
+                                        player.set_status(Status.READY_TO_BREAK_OVERLAP,
+                                                          Status.ATTEMPT_TO_KILL_ENEMY) # 尝试击杀敌军
+                                        return oppAction + 4
+                                else:
+                                    pass # 均不能射击，那么将判定为没有风险。那就一起移动
 
                             # 正常情况下选择堵路
                             #----------------------
@@ -4563,6 +4625,7 @@ class MarchingDecision(SingleDecisionMaker):
                     raise OUTER_BREAK
 
                 realAction = player.try_make_decision(attackAction)
+
                 if Action.is_stay(realAction): # 存在风险
                     if Action.is_move(attackAction):
 
@@ -4715,6 +4778,14 @@ class MarchingDecision(SingleDecisionMaker):
                 # 类似于主动防御的情况
                 #
                 if Action.is_move(realAction):
+
+                    if battler.is_face_to_enemy_base(ignore_brick=True):
+                        # 如果已经和基地处在同一直线上
+                        with map_.simulate_one_action(battler, realAction):
+                            if not battler.is_face_to_enemy_base(ignore_brick=True):
+                                returnAction = Action.STAY # 如果移动后不再面对敌人基地，那么就不移动
+                                raise OUTER_BREAK
+
                     if (not player.has_status(Status.DEFENSIVE) #　防御性无效
                         and battler.is_in_enemy_site()  # 只有在敌方地盘时才有效！
                         ):
@@ -5287,6 +5358,9 @@ class Tank2Player(Player):
         if not battler.canShoot:
             self.set_status(Status.RELOADING)
 
+        if battler.is_face_to_enemy_base(ignore_brick=True):
+            self.set_status(Status.FACING_TO_ENEMY_BASE)
+
 
         decisions = DecisionChain(
 
@@ -5439,9 +5513,11 @@ class Tank2Team(Team):
         Return:
             - actions    [int, int]    0, 1 号玩家的决策
         """
-        map_    = self._map
-        player1 = self._player1
-        player2 = self._player2
+        map_     = self._map
+        player1  = self._player1
+        player2  = self._player2
+        battler1 = player1.battler
+        battler2 = player2.battler
 
 
         # 假装先让对方以自己的想法决策
@@ -5760,10 +5836,80 @@ class Tank2Team(Team):
         # 如果当前为侵略性的，然后双方相邻，这个时候可以先后退一步
         # 然后下一步移动，尝试和对方重叠，这样有可能过掉对方
 
-        return returnActions
+
+
+        #
+        # 如果两架坦克同时射向同一个块，最终两个炮弹将会浪费一个
+        # 在这种情况下不如让一方改为停止
+        #
+        # 对于重叠拆基地的情况，往往有奇效
+        #
+        #
+        # 不过要注意判断被摧毁的块是什么，不能是坦克，因为敌方坦克可以移走
+        # 那么这时我方两个坦克对炮，如果一个射击一个不射击，就会打到自己人
+        #
+        action1, action2 = returnActions
+        if Action.is_shoot(action1) and Action.is_shoot(action2):
+            destroyedFields1 = battler1.get_destroyed_fields_if_shoot(action1)
+            destroyedFields2 = battler2.get_destroyed_fields_if_shoot(action2)
+            if destroyedFields1 == destroyedFields2:
+                for field in destroyedFields1:
+                    if isinstance(field, TankField):
+                        break # 这种情况仍然保持两人同时射击
+                else: # 没有 tank
+                    returnActions[0]  = Action.STAY # 仍选一个
+                    hasTeamActions[0] = True
+
+        #
+        # 判断是否出现队友恰好打掉准备移动的队友的情况
+        #
+        action1, action2 = returnActions
+        _mayShouldForcedStop = False
+        if Action.is_shoot(action1) and Action.is_move(action2):
+            shootAction = action1
+            shootPlayer = player1
+            moveAction  = action2
+            movePlayer  = player2
+            _mayShouldForcedStop = True
+        elif Action.is_move(action1) and Action.is_shoot(action2):
+            shootAction = action2
+            shootPlayer = player2
+            moveAction  = action1
+            movePlayer  = player1
+            _mayShouldForcedStop = True
+
+        if _mayShouldForcedStop:
+            moveBattler = movePlayer.battler
+            shootBattler = shootPlayer.battler
+            _shouldForcedStop = False
+            with map_.simulate_one_action(moveBattler, moveAction):
+                with map_.simulate_one_action(shootBattler, shootAction):
+                    if moveBattler.destroyed: # 刚好把队友打死 ...
+                        _shouldForcedStop = True
+
+            if _shouldForcedStop:
+                #
+                # TODO:
+                #   如何决策？
+                #   改动射击和决策都有可能很危险
+                #
+
+                #
+                # 这里先做一个特殊情况，那就是重叠攻击基地，这种情况将移动的队友视为不移动
+                #
+                # TODO:
+                #   好吧，这种情况和主动和队友打破重叠的行为是相斥的 ...
+                #
+                if (moveBattler.xy == shootBattler.xy
+                    and moveBattler.is_face_to_enemy_base(ignore_brick=False)
+                    and shootBattler.is_face_to_enemy_base(ignore_brick=False)
+                    ):
+                    returnActions[movePlayer.id] = Action.STAY
+                    hasTeamActions[movePlayer.id] = True
+
+
 
         action1, action2 = returnActions
-
         # 如果存在玩家没有处理，那么
         if not player1.is_handled(action1):
             action1 = Action.STAY

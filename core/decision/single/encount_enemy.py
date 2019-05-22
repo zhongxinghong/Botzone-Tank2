@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 05:37:06
+# @Last Modified time: 2019-05-22 19:30:02
 
 __all__ = [
 
@@ -14,6 +14,7 @@ from ..abstract import SingleDecisionMaker
 from ...utils import debug_print
 from ...action import Action
 from ...strategy.status import Status
+from ...strategy.label import Label
 from ...strategy.evaluate import evaluate_aggressive
 
 #{ BEGIN }#
@@ -129,12 +130,24 @@ class EncountEnemyDecision(SingleDecisionMaker):
             # ---------
             # 1. 敌人数量为 2 但是一个处在另一个身后，或者重叠，可视为一架
             # 2. 敌人数量为 1
+            #
             if len(aroundEnemies) == 1:
                 oppTank = aroundEnemies[0]
             else: # len(aroundEnemies) == 2:
                 oppTank = battler.get_nearest_enemy()
             oppBattler = BattleTank(oppTank)
             oppPlayer = Tank2Player(oppBattler)
+
+            #
+            # (inserted) 判断上回合敌人是否和我重叠，用于标记敌人 5ce52a48d2337e01c7a714c7
+            #
+            if (player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=1)
+                and not player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY, turns=2)
+                ): # 上回合刚刚进入重叠，这回合就被打破
+                with map_.rollback_to_previous():
+                    if oppTank is battler.get_overlapping_enemy():
+                        oppPlayer.add_labels(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
+
 
             # 根据当时的情况，评估侵略性
             status = evaluate_aggressive(battler, oppBattler)

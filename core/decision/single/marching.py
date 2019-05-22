@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 07:41:31
+# @Last Modified time: 2019-05-22 16:16:28
 
 __all__ = [
 
@@ -115,6 +115,7 @@ class MarchingDecision(SingleDecisionMaker):
                     raise OUTER_BREAK
 
                 realAction = player.try_make_decision(attackAction)
+
                 if Action.is_stay(realAction): # 存在风险
                     if Action.is_move(attackAction):
 
@@ -267,6 +268,14 @@ class MarchingDecision(SingleDecisionMaker):
                 # 类似于主动防御的情况
                 #
                 if Action.is_move(realAction):
+
+                    if battler.is_face_to_enemy_base(ignore_brick=True):
+                        # 如果已经和基地处在同一直线上
+                        with map_.simulate_one_action(battler, realAction):
+                            if not battler.is_face_to_enemy_base(ignore_brick=True):
+                                returnAction = Action.STAY # 如果移动后不再面对敌人基地，那么就不移动
+                                raise OUTER_BREAK
+
                     if (not player.has_status(Status.DEFENSIVE) #　防御性无效
                         and battler.is_in_enemy_site()  # 只有在敌方地盘时才有效！
                         ):

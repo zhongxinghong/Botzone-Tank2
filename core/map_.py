@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 04:02:50
+# @Last Modified time: 2019-05-22 19:16:16
 """
 地图类
 """
@@ -427,12 +427,13 @@ class Tank2Map(Map, metaclass=SingletonMeta):
 
         """
         try:
-            self.revert()
+            success = self.revert()
             yield
         except Exception as e:
             raise e
         finally:
-            self.undo_revert() # 回合结束后撤销回滚
+            if success:
+                self.undo_revert() # 回合结束后撤销回滚
 
     def undo_revert(self):
         """

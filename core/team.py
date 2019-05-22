@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 04:45:21
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-22 17:49:37
 """
 游戏团队类
 --------------------------------------------
@@ -34,6 +34,7 @@ __all__ = [
 
 from .utils import debug_print
 from .action import Action
+from .field import TankField
 from .strategy.status import Status
 from .strategy.signal import Signal
 from .decision.abstract import DecisionMaker
@@ -165,9 +166,11 @@ class Tank2Team(Team):
         Return:
             - actions    [int, int]    0, 1 号玩家的决策
         """
-        map_    = self._map
-        player1 = self._player1
-        player2 = self._player2
+        map_     = self._map
+        player1  = self._player1
+        player2  = self._player2
+        battler1 = player1.battler
+        battler2 = player2.battler
 
 
         # 假装先让对方以自己的想法决策
@@ -486,10 +489,80 @@ class Tank2Team(Team):
         # 如果当前为侵略性的，然后双方相邻，这个时候可以先后退一步
         # 然后下一步移动，尝试和对方重叠，这样有可能过掉对方
 
-        return returnActions
+
+
+        #
+        # 如果两架坦克同时射向同一个块，最终两个炮弹将会浪费一个
+        # 在这种情况下不如让一方改为停止
+        #
+        # 对于重叠拆基地的情况，往往有奇效
+        #
+        #
+        # 不过要注意判断被摧毁的块是什么，不能是坦克，因为敌方坦克可以移走
+        # 那么这时我方两个坦克对炮，如果一个射击一个不射击，就会打到自己人
+        #
+        action1, action2 = returnActions
+        if Action.is_shoot(action1) and Action.is_shoot(action2):
+            destroyedFields1 = battler1.get_destroyed_fields_if_shoot(action1)
+            destroyedFields2 = battler2.get_destroyed_fields_if_shoot(action2)
+            if destroyedFields1 == destroyedFields2:
+                for field in destroyedFields1:
+                    if isinstance(field, TankField):
+                        break # 这种情况仍然保持两人同时射击
+                else: # 没有 tank
+                    returnActions[0]  = Action.STAY # 仍选一个
+                    hasTeamActions[0] = True
+
+        #
+        # 判断是否出现队友恰好打掉准备移动的队友的情况
+        #
+        action1, action2 = returnActions
+        _mayShouldForcedStop = False
+        if Action.is_shoot(action1) and Action.is_move(action2):
+            shootAction = action1
+            shootPlayer = player1
+            moveAction  = action2
+            movePlayer  = player2
+            _mayShouldForcedStop = True
+        elif Action.is_move(action1) and Action.is_shoot(action2):
+            shootAction = action2
+            shootPlayer = player2
+            moveAction  = action1
+            movePlayer  = player1
+            _mayShouldForcedStop = True
+
+        if _mayShouldForcedStop:
+            moveBattler = movePlayer.battler
+            shootBattler = shootPlayer.battler
+            _shouldForcedStop = False
+            with map_.simulate_one_action(moveBattler, moveAction):
+                with map_.simulate_one_action(shootBattler, shootAction):
+                    if moveBattler.destroyed: # 刚好把队友打死 ...
+                        _shouldForcedStop = True
+
+            if _shouldForcedStop:
+                #
+                # TODO:
+                #   如何决策？
+                #   改动射击和决策都有可能很危险
+                #
+
+                #
+                # 这里先做一个特殊情况，那就是重叠攻击基地，这种情况将移动的队友视为不移动
+                #
+                # TODO:
+                #   好吧，这种情况和主动和队友打破重叠的行为是相斥的 ...
+                #
+                if (moveBattler.xy == shootBattler.xy
+                    and moveBattler.is_face_to_enemy_base(ignore_brick=False)
+                    and shootBattler.is_face_to_enemy_base(ignore_brick=False)
+                    ):
+                    returnActions[movePlayer.id] = Action.STAY
+                    hasTeamActions[movePlayer.id] = True
+
+
 
         action1, action2 = returnActions
-
         # 如果存在玩家没有处理，那么
         if not player1.is_handled(action1):
             action1 = Action.STAY

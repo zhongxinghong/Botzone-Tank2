@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 04:35:06
+# @Last Modified time: 2019-05-22 16:17:51
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -766,14 +766,19 @@ class BattleTank(object):
         return []
 
 
-    def is_face_to_enemy_base(self):
+    def is_face_to_enemy_base(self, ignore_brick=False):
         """
-        是否直面对方基地，没有任何障碍阻挡，用于特殊决策！
+        是否直面对方基地，或者是与敌人基地处在同一条直线上
+
+        Input:
+            - ignore_brick   bool   是否忽略土墙，如果忽略，那么只需要基地和坦克
+                                    处在同一直线上即可
         """
         tank = self._tank
         map_ = self._map
         oppSide = 1 - tank.side
         oppBase = map_.bases[oppSide]
+
         x1, y1 = tank.xy
         x2, y2 = oppBase.xy
         for dx, dy in get_searching_directions(x1, y1, x2, y2):
@@ -792,10 +797,16 @@ class BattleTank(object):
                     field = fields[0]
                     if isinstance(field, (WaterField, EmptyField) ):
                         continue # 非 block 情况
+                    elif isinstance(field, BrickField):
+                        if ignore_brick:
+                            continue
+                        else:
+                            break
                     elif field is oppBase:
                         return True
                     else:
                         break
+
         return False
 
 
