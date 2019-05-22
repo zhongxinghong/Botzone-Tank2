@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 11:03:08
+# @Last Modified time: 2019-05-22 04:45:21
 """
 游戏团队类
 --------------------------------------------
@@ -36,18 +36,18 @@ from .utils import debug_print
 from .action import Action
 from .strategy.status import Status
 from .strategy.signal import Signal
+from .decision.abstract import DecisionMaker
 from .player import Tank2Player
 
 #{ BEGIN }#
 
-class Team(object):
+class Team(DecisionMaker):
+
+    UNHANDLED_RESULT = [ Action.STAY, Action.STAY ] # 实际上不可能碰到 team 不能决策的情况，否则找谁决策呀 ...
 
     def __init__(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def make_decision(self, *args, **kwargs):
-        raise NotImplementedError
-
+        if __class__ is self.__class__:
+            raise NotImplementedError
 
 class Tank2Team(Team):
 
@@ -135,7 +135,10 @@ class Tank2Team(Team):
         for i in range( len(allStatus) - 1 ,
                         len(allStatus) - 1 - turns,
                         -1 ): # 逆序
-            previousStatus = allStatus[i][player.id]
+            try:
+                previousStatus = allStatus[i][player.id]
+            except IndexError: # 可能 allStatus 为空
+                return False
             if previousStatus is None:
                 return False
             elif status not in previousStatus:
@@ -155,7 +158,7 @@ class Tank2Team(Team):
         return self._previousActions[player.id][-back]
 
 
-    def make_decision(self):
+    def _make_decision(self):
         """
         团队决策
 
@@ -175,11 +178,13 @@ class Tank2Team(Team):
             oppPlayer.make_decision()
 
 
-        action1 = action2 = Action.INVALID
+        # 保存玩家的最终决策结果
+        action1 = action2 = Tank2Player.UNHANDLED_RESULT
         signal1 = signal2 = Signal.NONE
 
-        action3 = action4 = Action.INVALID # 中间变量
-        signal3 = signal4 = Signal.NONE    # 中间变量
+        # 中级变量
+        action3 = action4 = Tank2Player.UNHANDLED_RESULT
+        signal3 = signal4 = Signal.NONE
 
 
         # 我方玩家单独决策
@@ -481,14 +486,35 @@ class Tank2Team(Team):
         # 如果当前为侵略性的，然后双方相邻，这个时候可以先后退一步
         # 然后下一步移动，尝试和对方重叠，这样有可能过掉对方
 
-
+        return returnActions
 
         action1, action2 = returnActions
 
-        if action1 == Action.INVALID:
+        # 如果存在玩家没有处理，那么
+        if not player1.is_handled(action1):
             action1 = Action.STAY
-        if action2 == Action.INVALID:
+        if not player2.is_handled(action2):
             action2 = Action.STAY
+
+        return [ action1, action2 ]
+
+    # @override
+    def make_decision(self):
+        """
+        如果有的玩家无法决策，那么就将其行为设为 Action.STAY
+        事实上这种情况是不应该出现的，但是为了防止出错，此处对决策结果进行检查
+
+        """
+        player1 = self._player1
+        player2 = self._player2
+
+        action1, action2 = self._make_decision()
+
+        if not player1.is_handled(action1):
+            action1 = Action.STAY
+        if not player2.is_handled(action2):
+            action2 = Action.STAY
+
         return [ action1, action2 ]
 
 #{ END }#

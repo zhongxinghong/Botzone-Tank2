@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 11:39:48
+# @Last Modified time: 2019-05-22 07:41:31
 
 __all__ = [
 
@@ -14,7 +14,6 @@ from ..abstract import SingleDecisionMaker
 from ...utils import outer_label, debug_print, debug_pprint
 from ...action import Action
 from ...field import BrickField
-from ...tank import BattleTank
 from ...strategy.status import Status
 from ...strategy.signal import Signal
 from ...strategy.evaluate import estimate_enemy_effect_on_route
@@ -42,13 +41,14 @@ class MarchingDecision(SingleDecisionMaker):
     """
     def _make_decision(self):
 
-        player      = self._player
-        Tank2Player = type(player)
-
+        player  = self._player
         signal  = self._signal
         map_    = player._map
         tank    = player.tank
         battler = player.battler
+
+        Tank2Player = type(player)
+        BattleTank  = type(battler)
 
 
         # (inserted) 强攻信号
@@ -82,7 +82,12 @@ class MarchingDecision(SingleDecisionMaker):
         #
         # 5cde18e7d2337e01c79f47c8
         #
-        isMiddleFirst = battler.is_in_enemy_site()
+        isMiddleFirst = False
+        # isMiddleFirst = battler.is_in_enemy_site()
+        #
+        # TODO:
+        #   不要采用中路优先的搜索，否则容易打出狭路，然后因为敌人对自己存在威胁而停止不前！
+        #   5ce48c2fd2337e01c7a6459b
 
 
         returnAction = Action.STAY # 将会返回的行为，默认为 STAY
@@ -292,7 +297,9 @@ class MarchingDecision(SingleDecisionMaker):
                                             returnAction = shootAction # 不检查安全性
                                             raise OUTER_BREAK
 
-                        if _needToBreakWallFirst: # 需要射击但是前面没有射击，那么就等待
+                        if (_needToBreakWallFirst
+                            and not battler.canShoot # 需要射击但是暂时没有炮弹，那么就等待
+                            ):
                             player.set_status(Status.WAIT_FOR_MARCHING)
                             returnAction = Action.STAY
                             continue
@@ -301,7 +308,8 @@ class MarchingDecision(SingleDecisionMaker):
                 #
                 # move action 在这之前必须要全部处理完！
                 #
-                #
+
+
                 #
                 # 侵略模式下优先射击，如果能够打掉处在最短路线上的墙壁
                 #-------------------

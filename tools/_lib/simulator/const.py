@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 11:54:55
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 02:03:45
+# @Last Modified time: 2019-05-21 15:30:45
 
 __all__ = [
 
@@ -15,9 +15,9 @@ __all__ = [
     ]
 
 import os
-from ..utils import abs_path
+from ..utils import get_abspath
 
 BLUE_INPUT_JSON_FILENAME = "blue.input.json"
 RED_INPUT_JSON_FILENAME  = "red.input.json"
-DATASET_DIR              = abs_path("../dataset/")
-CONFIG_JSON_FILE         = abs_path("./config/simulator.json")
+DATASET_DIR              = get_abspath("../dataset/")
+CONFIG_JSON_FILE         = get_abspath("./config/simulator.json")

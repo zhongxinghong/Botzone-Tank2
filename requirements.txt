@@ -3,3 +3,4 @@ requests==2.6.0
 APScheduler==3.6.0
 lxml==4.2.0
 simplejson==3.16.0
+flask==1.0.3

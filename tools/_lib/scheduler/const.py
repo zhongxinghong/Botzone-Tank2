@@ -2,7 +2,7 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-05 17:46:05
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-16 16:31:30
+# @Last Modified time: 2019-05-21 15:30:36
 
 __all__ = [
 
@@ -15,15 +15,15 @@ __all__ = [
 
     ]
 
-from ..utils import abs_path, mkdir
+from ..utils import get_abspath, mkdir
 
 
 REQUESTS_INTERVAL       = 1 # 1s
 
-CONFIG_JSON_FILE        = abs_path("./config/scheduler.json")
+CONFIG_JSON_FILE        = get_abspath("./config/scheduler.json")
 
-RANK_MATCHES_DATA_DIR   = abs_path("./data/rank_matches")
-GLOBAL_MATCHES_DATA_DIR = abs_path("./data/global_matches")
+RANK_MATCHES_DATA_DIR   = get_abspath("./data/rank_matches")
+GLOBAL_MATCHES_DATA_DIR = get_abspath("./data/global_matches")
 
 
 mkdir(RANK_MATCHES_DATA_DIR)

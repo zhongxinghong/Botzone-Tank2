@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 11:31:57
+# @Last Modified time: 2019-05-21 21:04:43
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -21,19 +21,20 @@ from .field import TankField
 from .tank import BattleTank
 from .strategy.signal import Signal
 from .strategy.status import Status
+from .decision.abstract import DecisionMaker
 from .decision import DecisionChain, MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
     OverlappingDecision, EncountEnemyDecision, AttackBaseDecision, LeaveTeammateDecision,\
     BehindBrickDecision
 
 #{ BEGIN }#
 
-class Player(object):
+class Player(DecisionMaker):
+
+    UNHANDLED_RESULT = Action.INVALID  # 不能处理的情况，返回 Action.INVALID
 
     def __init__(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def make_decision(self, *args, **kwargs):
-        raise NotImplementedError
+        if __class__ is self.__class__:
+            raise NotImplementedError
 
 
 class Tank2Player(Player):
@@ -410,17 +411,18 @@ class Tank2Player(Player):
         else:
             return action
 
+    # @override
     def make_decision(self, signal=Signal.NONE):
         """
-        make_decision 的装饰
-        ----------------------
-
+        预处理：
+        ------------------
         - 清除所有旧有状态
         - 清除可能的风险敌人
         - 统一处理回复格式
 
-        WARNING:
-            - 申明为 make_decision 过程中的缓存变量，必须在下一次决策前率先清楚
+        注意:
+        ------------------
+        - 申明为 _make_decision 过程中的缓存变量，必须在下一次决策前预先清除
 
         """
         self.clear_status()     # 先清除所有的状态
@@ -429,42 +431,32 @@ class Tank2Player(Player):
         res = self._make_decision(signal)
 
         if isinstance(res, (tuple, list)) and len(res) == 2:
-            outputSignal = res[1]
+            returnSignal = res[1]
             action = res[0]
         else:
-            outputSignal = Signal.NONE
+            if signal != Signal.NONE: # 说明没有回复团队信号
+                returnSignal = Signal.UNHANDLED
+            else:
+                returnSignal = Signal.INVALID
             action = res
 
-        inputSignal = signal
-
-        if inputSignal != Signal.NONE and outputSignal == Signal.NONE:
-            outputSignal = Signal.UNHANDLED # 没有回复团队信号，事实上不允许这样，至少是 CANHANDLED
-
         self._decision = action # 缓存决策
-        return ( action, outputSignal )
+        return ( action, returnSignal )
 
 
     def _make_decision(self, signal):
-        """
-        真正的 make_decision 决策下一步的行为
 
-        Input:
-            - signal   int   团队信号
-
-        Return:
-            - action   int   行为编号，如果已经输了，则返回 Action.INVALID
-        """
         battler  = self._battler
 
         if self.defeated:
             self.set_status(Status.DIED)
-            return Action.INVALID
+            return self.__class__.UNHANDLED_RESULT
 
         if not battler.canShoot:
             self.set_status(Status.RELOADING)
 
 
-        action = DecisionChain(
+        decisions = DecisionChain(
 
                     LeaveTeammateDecision(self, signal),
                     AttackBaseDecision(self, signal),
@@ -475,8 +467,14 @@ class Tank2Player(Player):
                     ActiveDefenseDecision(self, signal),
                     MarchingDecision(self, signal),
 
-                ).make_decision()
+                )
 
-        return action
+
+        res = decisions.make_decision()
+
+        if decisions.is_handled(res):
+            return res
+
+        return self.__class__.UNHANDLED_RESULT
 
 #{ END }#

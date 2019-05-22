@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 06:14:09
+# @Last Modified time: 2019-05-22 05:37:06
 
 __all__ = [
 
@@ -11,8 +11,8 @@ __all__ = [
     ]
 
 from ..abstract import SingleDecisionMaker
+from ...utils import debug_print
 from ...action import Action
-from ...tank import BattleTank
 from ...strategy.status import Status
 from ...strategy.evaluate import evaluate_aggressive
 
@@ -25,12 +25,15 @@ class EncountEnemyDecision(SingleDecisionMaker):
     """
     def _make_decision(self):
 
-        player = self._player
-
-        map_ = player._map
-        tank = player.tank
-        battler = player.battler
+        player   = self._player
+        map_     = player._map
+        tank     = player.tank
+        battler  = player.battler
         teammate = player.teammate
+
+        Tank2Player = type(player)
+        BattleTank  = type(battler)
+
 
         aroundEnemies = battler.get_enemies_around()
         if len(aroundEnemies) > 0:
@@ -131,6 +134,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
             else: # len(aroundEnemies) == 2:
                 oppTank = battler.get_nearest_enemy()
             oppBattler = BattleTank(oppTank)
+            oppPlayer = Tank2Player(oppBattler)
 
             # 根据当时的情况，评估侵略性
             status = evaluate_aggressive(battler, oppBattler)
@@ -181,42 +185,23 @@ class EncountEnemyDecision(SingleDecisionMaker):
                                         player.set_status(Status.KEEP_ON_MARCHING)
                                         return action
 
-                        # 刚刚对射为两回合，尝试打破对射僵局
-                        #--------------------------------
-                        # 1. 当前为侵略性的，并且在对方地盘，尝试回退一步，与对方重叠。后退操作必须要有限制 5cd10315a51e681f0e900fa8
-                        # 2. 可以考虑往远处闪避，创造机会
+                        # 刚刚对射为两回合，该回合双方都没有炮弹，尝试打破僵局
+                        #---------------------------------------------------
+                        # 当前为侵略性的，并且在对方地盘，尝试回退一步，与对方重叠。
+                        #   后退操作必须要有限制 5cd10315a51e681f0e900fa8
                         #
                         if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=3)
+                            and Action.is_stay(player.get_previous_action(back=2))    # 还需要检查两者上上回合是否为等待
+                            and Action.is_stay(oppPlayer.get_previous_action(back=2)) # 避免将边移动边对射的情况考虑进来
                             and battler.is_in_enemy_site()         # 添加必须在对方地盘的限制，避免在我方地盘放人
                             and player.has_status(Status.AGGRESSIVE) # 只有侵略性的状态可以打破僵局
                             ):
-                            # 尝试背离敌人
-                            #---------------
                             backMoveAction = battler.back_away_from(oppBattler)
                             action = player.try_make_decision(backMoveAction)
                             if Action.is_move(action):
                                 player.set_status(Status.READY_TO_BACK_AWAY)
                                 return action
 
-                            # 尝试闪避敌人
-                            #---------------
-                            # 此处需要注意的是，如果能够按近路闪避，那么在射击回合早就闪走了
-                            # 所以这里只可能是往远处闪避
-                            #
-                            for action in battler.try_dodge(oppBattler):
-                                if Action.is_move(action):
-                                    realAction = player.try_make_decision(action)
-                                    if Action.is_move(realAction):
-                                        player.set_status(Status.READY_TO_DODGE)
-                                        # 这里还是再判断一下距离
-                                        route1 = battler.get_shortest_attacking_route()
-                                        with map_.simulate_one_action(battler, action):
-                                            route2 = battler.get_shortest_attacking_route()
-                                            if route2.length > route1.length:
-                                                player.set_status(Status.WILL_DODGE_TO_LONG_WAY)
-                                        return realAction
-
-                        # 如果之前是对射，在这里需要延续一下对射状态
                         if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
                             and not battler.canShoot    # 但是我方本回合不能射击
                             and not oppBattler.canShoot # 并且对方本回合不能射击
@@ -278,7 +263,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                         else: # 否则算作正常的防守
                             if battler.canShoot:
                                 player.set_status(Status.READY_TO_BLOCK_ROAD, Status.READY_TO_FIGHT_BACK)
-                                if battler.get_manhattan_distance_to(oppBattler) == 1:
+                                if battler.on_the_same_line_with(oppBattler, ignore_brick=False):
                                     player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 保持对射
                                 return battler.shoot_to(oppBattler)
 
@@ -313,14 +298,49 @@ class EncountEnemyDecision(SingleDecisionMaker):
                                     player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
                                     return realAction
 
-                    # 没有不能不导致路线编程的办法，如果有炮弹，那么优先射击！
+                    # 没有不能不导致路线变长的办法，如果有炮弹，那么优先射击！
                     # 5ccef443a51e681f0e8e64d8
                     #-----------------------------------
                     if Action.is_shoot(defenseAction):
                         player.set_status(Status.READY_TO_FIGHT_BACK)
-                        if battler.get_manhattan_distance_to(oppBattler) == 1:
+                        if battler.on_the_same_line_with(oppBattler, ignore_brick=False):
+
+                            # (inserted) 刚刚对射为两回合，该回合尝试闪避敌人，打破僵局
+                            #--------------------------------------------
+                            # 尝试往远处闪避，创造机会
+                            #
+                            # 此外，由于敌人这回合必定射击，那么他的炮弹可能会打掉我身后的墙
+                            # 这样的可能会创造一些新的机会。有的时候导致该回合必须要与敌人对射的原因，可能是因为
+                            # 没有办法开辟攻击路线，而不是敌人堵路。由于闪避的方向是不允许的，也就是另一个更近的
+                            # 闪避反向上必定是一个无法摧毁也不能移动到的块，否则会被与先摧毁。
+                            # 此时如果可以往背离敌人的方向移动，那么应该不会陷入对射僵局。但事实上是进入了
+                            # 这就说明别离敌人的方向是无法移动到的。如果它恰好是一块土墙，那么就可以靠这回合和敌人接力
+                            # 来摧毁掉，也许还有往下移动的可能。 5ce429fad2337e01c7a5cd61
+                            #
+                            if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=4)
+                                and Action.is_stay(player.get_previous_action(back=1)) # 检查对应的两个冷却回合是停止
+                                and Action.is_stay(player.get_previous_action(back=3)) # 避免将移动对射的情况被考虑进来
+                                and Action.is_stay(oppPlayer.get_previous_action(back=1))
+                                and Action.is_stay(oppPlayer.get_previous_action(back=3))
+                                and battler.is_in_enemy_site()           # 添加必须在对方地盘的限制，避免在我方地盘放人
+                                and player.has_status(Status.AGGRESSIVE) # 只有侵略性的状态可以打破僵局
+                                ):
+                                for action in battler.try_dodge(oppBattler):
+                                    if Action.is_move(action):
+                                        realAction = player.try_make_decision(action)
+                                        if Action.is_move(realAction):
+                                            player.set_status(Status.READY_TO_DODGE)
+                                            # 这里还是再判断一下距离
+                                            route1 = battler.get_shortest_attacking_route()
+                                            with map_.simulate_one_action(battler, action):
+                                                route2 = battler.get_shortest_attacking_route()
+                                                if route2.length > route1.length:
+                                                    player.set_status(Status.WILL_DODGE_TO_LONG_WAY)
+                                            return realAction
+
+                            # 默认是优先射击
                             player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY)
-                        return defenseAction
+                            return defenseAction
 
                     # 如果不能射击，那么终究还是要闪避的
                     # 或者是无法后方移动，为了打破僵局，尝试闪避
@@ -453,7 +473,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                 else:
                     if battler.canShoot: # 优先反击
                         player.set_status(Status.READY_TO_FIGHT_BACK)
-                        if battler.get_manhattan_distance_to(oppBattler) == 1:   # 贴脸
+                        if battler.on_the_same_line_with(oppBattler, ignore_brick=False):
                             player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY) # 触发对射状态
                         return battler.shoot_to(oppBattler)
                     # 不能反击，只好闪避

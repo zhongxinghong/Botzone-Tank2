@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:25
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-07 21:56:35
+# @Last Modified time: 2019-05-21 15:30:42
 """
 项目自动化构建工具
 --------------------------
@@ -26,7 +26,7 @@
 
 import os
 import time
-from _lib.utils import abs_path, mkdir, read_file, json_load
+from _lib.utils import get_abspath, mkdir, read_file, json_load
 from _lib.builder.const import BLANK_LINES, BUILD_DIR, CONFIG_JSON_FILE
 from _lib.builder.bean import SourceBean
 from _lib.builder.parser import extract_code

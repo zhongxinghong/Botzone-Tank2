@@ -1,0 +1,84 @@
+{% macro render_pagination( current_page, total_page ) %}
+<div class="row">
+  <div class="col-12">
+    <nav>
+      <ul class="pagination pagination-sm">
+        <li class="page-item {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ request.base_url }}?page={{ current_page - 1 }}">Previous</a></li>
+      {% for page in range(1, total_page + 1)  %}
+        <li class="page-item {% if current_page == page %}active{% endif %}"><a class="page-link" href="{{ request.base_url }}?page={{ page }}">{{ page }}</a></li>
+      {% endfor %}
+        <li class="page-item {% if current_page == total_page %}disabled{% endif %}"><a class="page-link" href="{{ request.base_url }}?page={{ current_page + 1 }}">Next</a></li>
+      </ul>
+    </nav>
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro render_matches_table( title, matches, current_page, total_page ) %}
+<div class="row">
+  <div class="col-12">
+    <p class="h2">{{ title }}</p>
+    <br>
+  </div>
+</div>
+{{ render_pagination(current_page, total_page) }}
+<div class="row">
+  <div class="col-12">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Game</th>
+          <th>Time</th>
+          <th>Scores</th>
+          <th>Bots</th>
+          <th>Players</th>
+          <th>Replay</th>
+          <th>Delete</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for match in matches %}
+        <tr data-matchid="{{ match.id }}">
+          <td>{{ match.listID }}</td>
+          <td>{{ match.game }}</td>
+          <td>{{ match.time|strftime }}</td>
+          <td>{{ match.scores|join(" : ") }}</td>
+          <td>{{ match.bots|join(" / ") }}</td>
+          <td>{{ match.players|join(" / ") }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ match.url }}" target="_blank">Replay</a></td>
+          <td><button class="btn btn-sm btn-danger" type="submit" onclick="submitDeleteRecord(this);">Delete</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{ render_pagination(current_page, total_page) }}
+{% endmacro %}
+
+
+{% macro render_submitDeleteRecord() %}
+<script type="text/javascript">
+  "use strict";
+
+  function submitDeleteRecord(btn) {
+    var matchID = $(btn).parents("tr").attr("data-matchid");
+    $.ajax({
+      url: `{{ request.base_url }}/${matchID}`,
+      type: 'DELETE',
+    })
+    .done(function(res) {
+      let { errcode, msg } = res;
+      $(btn).attr("disabled", "disabled").removeClass("btn-danger").addClass("btn-light");
+      if (errcode === 1) {
+        alert(res.errmsg);
+      }
+    })
+    .fail(function(res) {
+      console.log(res);
+    })
+  }
+</script>
+{% endmacro %}

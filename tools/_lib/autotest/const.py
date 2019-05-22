@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-04 02:45:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 02:46:14
+# @Last Modified time: 2019-05-21 15:31:19
 
 __all__ = [
 
@@ -10,8 +10,7 @@ __all__ = [
 
     ]
 
-import os
-from ..utils import abs_path
+from ..utils import get_abspath
 
 
-CONFIG_JSON_FILE         = abs_path("./config/autotest.json")
+CONFIG_JSON_FILE = get_abspath("./config/autotest.json")

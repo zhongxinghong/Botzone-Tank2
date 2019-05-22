@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:32:08
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 18:53:50
+# @Last Modified time: 2019-05-21 20:40:40
 
 __all__ = [
 
@@ -40,6 +40,7 @@ class BaseDefenseDecision(SingleDecisionMaker):
         map_    = player._map
         tank    = player.tank
         battler = player.battler
+
 
         for oppBattler in [ _oppPlayer.battler for _oppPlayer in player.opponents ]:
             if oppBattler.is_face_to_enemy_base(): # 面向基地

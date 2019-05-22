@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 10:27:00
+# @Last Modified time: 2019-05-22 04:35:06
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -564,11 +564,11 @@ class BattleTank(object):
             x3, y3 = oppBase.xy  # 在对方地盘，优先朝着对方基地的方向闪现
         actions = []
         for dx, dy in get_searching_directions(x1, y1, x3, y3, middle_first=True): # 优先逃跑向对方基地
-            x3 = x1 + dx
-            y3 = y1 + dy
-            if x3 == x2 or y3 == y2: # 逃跑方向不对
+            x4 = x1 + dx
+            y4 = y1 + dy
+            if x4 == x2 or y4 == y2: # 逃跑方向不对
                 continue
-            action = Action.get_action(x1, y1, x3, y3)
+            action = Action.get_action(x1, y1, x4, y4)
             if map_.is_valid_move_action(tank, action):
                 actions.append(action)
         return actions
@@ -645,7 +645,7 @@ class BattleTank(object):
         返回 self -> oppTank 的移动
 
         Input:
-            enemy   TankField/BattleTank    所有带坐标的 tank 对象
+            oppTank   TankField/BattleTank    所有带坐标的 tank 对象
         """
         x1, y1 = self._tank.xy
         x2, y2 = oppTank.xy
@@ -658,6 +658,64 @@ class BattleTank(object):
         返回 self -> oppTank 的射击行为，相当于 move + 4
         """
         return self.move_to(oppTank) + 4
+
+
+    def on_the_same_line_with(self, oppTank, ignore_brick=True):
+        """
+        是否和敌人处在同一条直线上
+
+        Input:
+            oppTank        TankField/BattleTank    所有带坐标的 tank 对象
+            ignore_brick   bool    是否忽略土墙的阻挡
+
+        """
+        tank = self._tank
+        map_ = self._map
+        x1, y1 = tank.xy
+        x2, y2 = oppTank.xy
+
+        if x1 != x2 and y1 != y2: # 坐标上直接可以否掉的情况
+            return False
+        elif (x1, y1) == (x2, y2): # 重叠，这种情况一般不会出现，但是还是判断一下
+            return True
+
+        if x1 == x2:
+            dx = 0
+            dy = np.sign(y2 - y1)
+        elif y1 == y2:
+            dx = np.sign(x2 - x1)
+            dy = 0
+
+        x, y = tank.xy
+        while True:
+            x += dx
+            y += dy
+            if not map_.in_map(x, y):
+                break
+            fields = map_[x, y]
+            if len(fields) == 0:
+                continue
+            elif len(fields) == 2:
+                if oppTank.xy == (x, y): # 说明敌方坦克在多人坦克里
+                    return True
+                else: # 否则不算
+                    return False
+            else:
+                field = fields[0]
+                if isinstance(field, (EmptyField, WaterField) ):
+                    continue
+                elif isinstance(field, BrickField):
+                    if ignore_brick: # 这种情况将 brick 视为空
+                        continue
+                    else:
+                        return False
+                elif isinstance(field, TankField) and field.xy == oppTank.xy:
+                    return True
+                else:
+                    return False # 其他所有的 block 类型均视为 False
+
+        # 没有检查到受阻的情况，那么就是在同一条直线上了
+        return True
 
 
     def back_away_from(self, oppTank):

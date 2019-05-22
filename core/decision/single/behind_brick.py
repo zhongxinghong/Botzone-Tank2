@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-20 09:12:48
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 09:18:35
+# @Last Modified time: 2019-05-21 20:58:05
 
 __all__ = [
 
@@ -10,24 +10,29 @@ __all__ = [
 
     ]
 
-from ..abstract import SingleDecisionMaker
+from ..abstract import RespondTeamSignalDecisionMaker
 from ...action import Action
-from ...tank import BattleTank
 from ...strategy.status import Status
 from ...strategy.signal import Signal
 
 #{ BEGIN }#
 
-class BehindBrickDecision(SingleDecisionMaker):
+class BehindBrickDecision(RespondTeamSignalDecisionMaker):
     """
-    适用于在墙后和敌人僵持时的决策
+    适用于在墙后和敌人僵持时的情况
+    响应团队信号 PREPARE_FOR_BREAK_BRICK
 
     """
+    HANDLED_SIGNALS = ( Signal.PREPARE_FOR_BREAK_BRICK, )
+
     def _make_decision(self):
 
-        player = self._player
-        signal = self._signal
+        player  = self._player
+        signal  = self._signal
         battler = player.battler
+
+
+        BattleTank = type(battler)
 
         # (inserted) 准备破墙信号
         #--------------------------
@@ -42,9 +47,8 @@ class BehindBrickDecision(SingleDecisionMaker):
         #   2. 如果不可以闪避，就返回这回合准备后路的信号
         #
         if signal == Signal.PREPARE_FOR_BREAK_BRICK:
-            player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
-            player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
-            attackAction = battler.get_next_attack_action()
+
+            attackAction = battler.get_next_attack_action() # 只考虑攻击路径上的敌人
             oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
 
             '''_undoRevertTurns = 0
@@ -55,26 +59,37 @@ class BehindBrickDecision(SingleDecisionMaker):
                 _undoRevertTurns += 1
                 oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)'''
 
-            player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
-            assert oppTank is not None
-            dodgeActions = battler.try_dodge(oppTank)
-            if len(dodgeActions) == 0:
-                # 准备凿墙
-                breakBrickActions = battler.break_brick_for_dodge(oppTank)
-                if len(breakBrickActions) == 0: # 两边均不是土墙
-                    res = ( Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
-                else:
-                    player.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
-                    res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
+            if oppTank is None:
+                #
+                # 墙后敌人并不一定处于攻击路径之后! 5ce3d1c0d2337e01c7a554e3
+                # 在这种情况下应该取消考虑这种情况
+                #
+                res = ( Action.INVALID, Signal.UNHANDLED )
+
             else:
-                # 可以闪避，那么回复团队一条消息，下一步是破墙动作
-                shootAction = battler.shoot_to(oppTank)
-                player.set_status(Status.READY_TO_BREAK_BRICK)
-                res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
 
-            '''for _ in range(_undoRevertTurns):
-                map_.undo_revert()'''
+                player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
+                player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
+                player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
 
-            return res
+                dodgeActions = battler.try_dodge(oppTank)
+                if len(dodgeActions) == 0:
+                    # 准备凿墙
+                    breakBrickActions = battler.break_brick_for_dodge(oppTank)
+                    if len(breakBrickActions) == 0: # 两边均不是土墙
+                        res = ( Action.STAY, Signal.CANHANDLED ) # 不能处理，只好等待
+                    else:
+                        player.set_status(Status.READY_TO_PREPARE_FOR_BREAK_BRICK)
+                        res = ( breakBrickActions[0], Signal.READY_TO_PREPARE_FOR_BREAK_BRICK )
+                else:
+                    # 可以闪避，那么回复团队一条消息，下一步是破墙动作
+                    shootAction = battler.shoot_to(oppTank)
+                    player.set_status(Status.READY_TO_BREAK_BRICK)
+                    res = ( shootAction, Signal.READY_TO_BREAK_BRICK )
+
+                '''for _ in range(_undoRevertTurns):
+                    map_.undo_revert()'''
+
+            return res  # 必定回复一个信号
 
 #{ END }#

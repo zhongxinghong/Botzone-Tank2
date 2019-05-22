@@ -35,6 +35,10 @@
         "file": "../core/map_.py"
     },
     {
+        "package": "",
+        "file": "../core/tank.py"
+    },
+    {
         "package": "strategy",
         "file": "../core/strategy/signal.py"
     },
@@ -93,18 +97,6 @@
         "disabled": true
     },
     {
-        "package": "",
-        "file": "../core/tank.py"
-    },
-    {
-        "package": "",
-        "file": "../core/player.py"
-    },
-    {
-        "package": "",
-        "file": "../core/team.py"
-    },
-    {
         "package": "decision",
         "file": "../core/decision/abstract.py"
     },
@@ -143,6 +135,14 @@
     {
         "package": "decision/single",
         "file": "../core/decision/single/marching.py"
+    },
+    {
+        "package": "",
+        "file": "../core/player.py"
+    },
+    {
+        "package": "",
+        "file": "../core/team.py"
     },
     {
         "package": "",

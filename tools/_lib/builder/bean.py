@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-01 02:06:28
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 02:07:23
+# @Last Modified time: 2019-05-21 15:30:39
 
 __all__ = [
 
@@ -11,7 +11,7 @@ __all__ = [
     ]
 
 import os
-from ..utils import abs_path
+from ..utils import get_abspath
 
 
 class SourceBean(object):
@@ -24,7 +24,7 @@ class SourceBean(object):
     }
     """
     def __init__(self, src):
-        self._file     = abs_path(src["file"])
+        self._file     = get_abspath(src["file"])
         self._package  = src["package"]
         self._disabled = src.get("disabled", False)
 

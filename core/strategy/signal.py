@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 22:14:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 07:13:31
+# @Last Modified time: 2019-05-21 21:13:30
 """
 消息与信号
 
@@ -24,6 +24,7 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
 
     __offset__ = 200
 
+    INVALID     = -1  # 无效信号
     NONE        = 0   # 空信号
     UNHANDLED   = 1   # 未处理团队信号，通常是因为有更紧急的状况而没有运行到相应的处理信号的位置
     CANHANDLED  = 2   # 未能处理团队信号，通常是因为尝试处理但是发现不合适
@@ -45,14 +46,19 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
     READY_TO_LEAVE_TEAMMATE          = 20  # 队员信号，准备和队友打破重叠
 
 
-    BREAK_SIGNALS = ( UNHANDLED, CANHANDLED )
-
     @staticmethod
     def is_break(signal):
         """
         该信号是否意味着沟通停止
         也就是是否为未处理或无法处理
+
         """
-        return signal in __class__.BREAK_SIGNALS
+        return signal in (
+
+                __class__.INVALID,
+                __class__.UNHANDLED,
+                __class__.CANHANDLED,
+
+                )
 
 #{ END }#

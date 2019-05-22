@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-25 06:10:39
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 18:27:26
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-21 15:30:34
 
 __all__ = [
 
     "mkdir",
-    "abs_path",
+    "get_abspath",
 
     "read_file",
 
@@ -35,7 +35,7 @@ def mkdir(path):
     if not os.path.exists(path):
         os.mkdir(path)
 
-def abs_path(*path):
+def get_abspath(*path):
     return os.path.abspath(os.path.join(__ROOT_DIR, *path))
 
 def read_file(file, encoding="utf-8-sig"):

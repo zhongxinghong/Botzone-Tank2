@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 13:27:52
+# @Last Modified time: 2019-05-22 04:02:50
 """
 地图类
 """
@@ -16,7 +16,7 @@ __all__ = [
 from .const import DEBUG_MODE, COMPACT_MAP, SIDE_COUNT, TANKS_PER_SIDE, GAME_STATUS_NOT_OVER,\
                 GAME_STATUS_DRAW, GAME_STATUS_BLUE_WIN, GAME_STATUS_RED_WIN
 from .global_ import np, functools, contextmanager
-from .utils import CachedProperty, SingletonMeta, debug_print, simulator_print
+from .utils import CachedProperty, SingletonMeta, debug_print
 from .action import Action
 from .field import Field, EmptyField, BaseField, BrickField, SteelField, WaterField, TankField
 
@@ -285,11 +285,6 @@ class Tank2Map(Map, metaclass=SingletonMeta):
                     raise Exception("%s will perform an invalid action %s"
                                      % (tank, action) )
                 tank.previousAction = action # 缓存本次行为，不考虑坦克是否已经挂掉
-                #simulator_print(tank.previousAction)
-                #debug_print(tank, action)
-        #debug_print()
-        #simulator_print("perform turn: ", self._turn, self._previousActions[-1])
-
 
         # 处理停止和移动
         for tanks in self._tanks:
@@ -395,7 +390,6 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         currentTurn = self._turn
         records = self._destroyedRecords
         _actions = self._previousActions.pop()
-        #simulator_print("revert turn:", self._turn, _actions)
 
         for side, tanks in enumerate(self._tanks): # 回滚历史动作
             for id_, tank in enumerate(tanks):

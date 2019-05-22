@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-01 01:58:22
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-01 02:22:14
+# @Last Modified time: 2019-05-21 15:30:38
 
 __all__ = [
 
@@ -12,8 +12,8 @@ __all__ = [
 
     ]
 
-from ..utils import abs_path
+from ..utils import get_abspath
 
 BLANK_LINES = "\n\n"
-CONFIG_JSON_FILE = abs_path("./config/builder.json")
-BUILD_DIR        = abs_path("../build")
+CONFIG_JSON_FILE = get_abspath("./config/builder.json")
+BUILD_DIR        = get_abspath("../build")
