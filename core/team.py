@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-22 17:49:37
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-23 14:03:50
 """
 游戏团队类
 --------------------------------------------
@@ -491,7 +491,7 @@ class Tank2Team(Team):
 
 
 
-        #
+        '''#
         # 如果两架坦克同时射向同一个块，最终两个炮弹将会浪费一个
         # 在这种情况下不如让一方改为停止
         #
@@ -558,7 +558,7 @@ class Tank2Team(Team):
                     and shootBattler.is_face_to_enemy_base(ignore_brick=False)
                     ):
                     returnActions[movePlayer.id] = Action.STAY
-                    hasTeamActions[movePlayer.id] = True
+                    hasTeamActions[movePlayer.id] = True'''
 
 
 

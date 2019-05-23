@@ -2,12 +2,14 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-05 17:02:55
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 04:22:20
+# @Last Modified time: 2019-05-23 15:59:03
 
 __all__ = [
 
     "RankBotPlayerBean",
+    "GroupContestParticipantBean",
     "GlobalMatchPlayerBean",
+    "GroupContestBotPlayerBean",
 
     ]
 
@@ -49,6 +51,10 @@ class RankBotPlayerBean(object):
     def __repr__(self):
         return "BotPlayer(%s, %s)" % (
                 self.botName, self.userName)
+
+class GroupContestParticipantBean(RankBotPlayerBean):
+    pass
+
 
 '''
 {
@@ -126,3 +132,41 @@ class GlobalMatchPlayerBean(object):
         else:
             return "BotPlayer(%s, %d, %s, %d)" % (
                     self.userName, self.score, self.botName, self.botVersion)
+
+
+class GroupContestBotPlayerBean(object):
+
+    def __init__(self, tree):
+        self._tree = tree
+
+    @CachedProperty
+    def name(self):
+        return self._tree.xpath('./a[contains(@class, "botname")]')[0].text.strip()
+
+    @CachedProperty
+    def id(self):
+        _onclick = self._tree.xpath('./a[contains(@class, "favorite")]/@onclick')[0]
+        return _regexBotIDFromFavorite.match(_onclick).group(1)
+
+    @CachedProperty
+    def version(self):
+        _version = self._tree.xpath('./a[contains(@class, "botname")]/span[@class="version"]')[0].text
+        return int(_version)
+
+    @CachedProperty
+    def score(self):
+        _score = self._tree.find('./div[1]').text
+        return int(_score)
+
+    @CachedProperty
+    def user(self):
+        return self._tree.xpath('./a[@class="username" or @class="smallusername"]')[0].text
+
+    @CachedProperty
+    def userID(self):
+        _href = self._tree.xpath('./a[@class="username" or @class="smallusername"]/@href')[0]
+        return _href.split("/")[-1]
+
+    def __repr__(self):
+        return "BotPlayer(%s, %d, %s, %d)" % (
+                self.name, self.version, self.score, self.user)

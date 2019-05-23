@@ -2,19 +2,20 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-05 16:54:33
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 04:16:46
+# @Last Modified time: 2019-05-23 15:57:51
 
 __all__ = [
 
     "RankMatchBean",
     "GlobalMatchBean",
+    "GroupContestMatchBean",
 
     ]
 
 from ...utils import CachedProperty
 from ..const import BOTZONE_URL_MATCH
 from ..utils import parse_timestamp, parse_utc_timestamp
-from .player import RankBotPlayerBean, GlobalMatchPlayerBean
+from .player import RankBotPlayerBean, GlobalMatchPlayerBean, GroupContestBotPlayerBean
 
 
 class RankMatchBean(object):
@@ -172,5 +173,128 @@ class GlobalMatchBean(object):
             "scores": self.scores,
             "players": [ (player.botName if player.isBot else None, player.userName)
                             for player in self.players ],
+            "url": self.url,
+            }
+
+
+
+class GlobalMatchBean(object):
+
+    def __init__(self, tree):
+        self._tree = tree  # lxml.etree._Element  from etree.HTML(r.content)
+
+    @CachedProperty
+    def id(self):
+        return self._tree.xpath('./td[5]/a/@href')[0].split("/")[-1]
+
+    @CachedProperty
+    def time(self):
+        _timestamp = self._tree.find('./td[1]').text
+        return parse_timestamp(_timestamp).timestamp()
+
+    @CachedProperty
+    def game(self):
+        return self._tree.find('./td[2]/a').text
+
+    @CachedProperty
+    def scores(self):
+        return [ player.score for player in self.players ]
+
+    @CachedProperty
+    def players(self):
+        _divs = self._tree.xpath('./td[4]/div[contains(@class, "matchresult")]')
+        return [ GlobalMatchPlayerBean(div) for div in _divs ]
+
+    @CachedProperty
+    def url(self):
+        return BOTZONE_URL_MATCH.format(matchID=self.id)
+
+
+    def __repr__(self):
+        _players = [ (player.botName, player.userName) if player.isBot else player.userName
+                        for player in self.players ]
+        return "Match(%s, %d, %d, %s, %s)" % (
+                self.game, self.scores[0], self.scores[1],
+                _players[0], _players[1])
+
+    @CachedProperty
+    def dict(self):
+        return {
+            "id": self.id,
+            "game": self.game,
+            "time": self.time,
+            "scores": self.scores,
+            "players": [ (player.botName if player.isBot else None, player.userName)
+                            for player in self.players ],
+            "url": self.url,
+            }
+
+
+
+class GroupContestMatchBean(object):
+
+    def __init__(self, tree, contest):
+        self._tree = tree       # lxml.etree._Element
+        self._contest = contest # ContestBean
+
+    @CachedProperty
+    def id(self):
+        return self._tree.xpath('./td[4]/a/@href')[0].split("/")[-1]
+
+    @property
+    def contestID(self):
+        return self._contest.id
+
+    @property
+    def groupID(self):
+        return self._contest.groupID
+
+    @property
+    def contest(self):
+        return self._contest.name
+
+    @property
+    def group(self):
+        return self._contest.group
+
+    @CachedProperty
+    def time(self):
+        _timestamp = self._tree.find('./td[1]').text
+        return parse_timestamp(_timestamp).timestamp()
+
+    @property
+    def game(self):
+        return self._contest.game
+
+    @CachedProperty
+    def scores(self):
+        return [ player.score for player in self.players ]
+
+    @CachedProperty
+    def players(self):
+        _divs = self._tree.xpath('./td[3]/div[contains(@class, "matchresult")]')
+        return [ GroupContestBotPlayerBean(div) for div in _divs ]
+
+    @CachedProperty
+    def url(self):
+        return BOTZONE_URL_MATCH.format(matchID=self.id)
+
+
+    def __repr__(self):
+        _players = [ (player.name, player.user) for player in self.players ]
+        return "Match(%s, %d, %d, %s, %s)" % (
+                self.game, self.scores[0], self.scores[1],
+                _players[0], _players[1])
+
+    @CachedProperty
+    def dict(self):
+        return {
+            "id": self.id,
+            "game": self.game,
+            "contest": self.contest,
+            "group": self.group,
+            "time": self.time,
+            "scores": self.scores,
+            "players": [ (player.name, player.user) for player in self.players ],
             "url": self.url,
             }

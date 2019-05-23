@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:56:48
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 03:30:16
+# @Last Modified time: 2019-05-23 15:59:42
 
 import sys
 sys.path.append("../")
@@ -14,7 +14,7 @@ from pprint import pprint
 from lxml import etree
 from tools._lib.client.botzone import BotzoneClient
 from tools._lib.client.bean import RankBotBean, RankGameBean, RankMatchBean, RankBotPlayerBean,\
-                                GlobalMatchBean, GlobalMatchPlayerBean
+    GlobalMatchBean, GlobalMatchPlayerBean, GroupContestMatchBean, GroupContestBean
 from tools._lib.const import CACHE_DIR
 
 client = BotzoneClient()
@@ -86,6 +86,8 @@ with open(os.path.join(CACHE_DIR, "global_match_list.html"), "rb") as fp:
 tree = etree.HTML(content)
 trs = tree.xpath('//body/div[@class="container"]//table//tr[position()>1]')
 
+### global_match_list ###
+
 '''
 for tr in trs:
 
@@ -122,10 +124,42 @@ for tr in trs:
             print(botVersion)
 
 '''
-
+'''
 for match in [ GlobalMatchBean(tr) for tr in trs ]:
     print(match)
     print(match.dict)
     for player in match.players:
         print(player)
+'''
 
+
+### contest_detail ###
+
+contestID = "5cbeb05f35f461309c26da61"
+groupID   = "5cb5794383f1e10a1eddebb3"
+game      = "Tank2"
+#r = client.get_contest_detail(contestID, groupID)
+#print(r.content) # 哇塞... 真踏马的大... 怪不着昨晚用手机看比赛掉了这么多流量...
+
+with open(os.path.join(CACHE_DIR, "contest_detail.json"), "rb") as fp:
+    contentDetailJSON = json.load(fp)
+
+tableHTML = contentDetailJSON["table"] #.encode("utf-8")
+'''with open(os.path.join(CACHE_DIR, "contest_detail_matches.html"), "wb") as fp:
+    fp.write(tableHTML)'''
+
+#tree = etree.HTML(tableHTML) # 显式指定为 utf-8 编码，否则容易乱码
+
+#trs = tree.xpath(".//tr")
+
+'''for match in [ GroupContestMatchBean(tr, contestID, groupID) for tr in trs ]:
+    print(match)
+    print(match.dict)
+    for player in match.players:
+        print(player)'''
+
+contest = GroupContestBean(contentDetailJSON, game)
+
+print(contest)
+print(contest.players[0])
+pprint(contest.matches[0].dict)

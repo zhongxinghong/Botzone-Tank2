@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @author:      Rabbit
 # @filename:    botzone_tank2.py
-# @date:        2019-05-22 19:53:32
+# @date:        2019-05-23 17:09:37
 # @site:        https://github.com/zhongxinghong/Botzone-Tank2
 # @description: Automatically built Python single-file script for Botzone/Tank2 game
 """
@@ -5838,7 +5838,7 @@ class Tank2Team(Team):
 
 
 
-        #
+        '''#
         # 如果两架坦克同时射向同一个块，最终两个炮弹将会浪费一个
         # 在这种情况下不如让一方改为停止
         #
@@ -5905,7 +5905,7 @@ class Tank2Team(Team):
                     and shootBattler.is_face_to_enemy_base(ignore_brick=False)
                     ):
                     returnActions[movePlayer.id] = Action.STAY
-                    hasTeamActions[movePlayer.id] = True
+                    hasTeamActions[movePlayer.id] = True'''
 
 
 

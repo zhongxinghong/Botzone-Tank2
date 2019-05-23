@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <title>{% block title %}{% endblock title %}</title>
-    <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('favicon_ico') }}">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('favicon_ico') }}">
+    <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('root.favicon_ico') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('root.favicon_ico') }}">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='assets/css/vendors/bootstrap.min.css') }}">
     {% block style %}{% endblock style %}
     <style type="text/css" media="screen">
@@ -26,9 +26,10 @@
       </div>
       <nav class="navbar navbar-expand navbar-light px-0">
         <div class="navbar-nav">
-          <a class="nav-item nav-link" href="{{ url_for('home') }}">Home</a>
-          <a class="nav-item nav-link" href="{{ url_for('rank_matches_list') }}">Rank Matches</a>
-          <a class="nav-item nav-link" href="{{ url_for('global_matches_list') }}">Global Matches</a>
+          <a class="nav-item nav-link" href="{{ url_for('root.home') }}">Home</a>
+          <a class="nav-item nav-link" href="{{ url_for('match.rank_matches_list') }}">Rank Matches</a>
+          <a class="nav-item nav-link" href="{{ url_for('match.global_matches_list') }}">Global Matches</a>
+          <a class="nav-item nav-link" href="{{ url_for('match.contest_matches_list') }}">Contest Matches</a>
         </div>
       </nav>
     </header>

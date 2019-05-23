@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:43:52
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-21 19:17:13
+# @Last Modified time: 2019-05-23 14:09:11
 
 __all__ = [
 
@@ -15,6 +15,8 @@ __all__ = [
     "BOTZONE_URL_BOT_DETAIL"
     "BOTZONE_URL_MATCH",
     "BOTZONE_URL_GLOBAL_MATCH_LIST",
+    "BOTZONE_URL_CONTEST_DETAIL",
+    "BOTZONE_URL_GROUP",
 
     ]
 
@@ -32,3 +34,5 @@ BOTZONE_URL_MYBOTS            = "https://botzone.org.cn/mybots"
 BOTZONE_URL_BOT_DETAIL        = "https://botzone.org.cn/mybots/detail/{botID}"
 BOTZONE_URL_MATCH             = "https://botzone.org.cn/match/{matchID}"
 BOTZONE_URL_GLOBAL_MATCH_LIST = "https://botzone.org.cn/globalmatchlist"
+BOTZONE_URL_CONTEST_DETAIL    = "https://botzone.org.cn/contest/detail/{contestID}"
+BOTZONE_URL_GROUP             = "https://botzone.org.cn/group/{groupID}"

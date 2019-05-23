@@ -8,5 +8,13 @@
     {
         "game_id": "5c908e0e7857b210f901be7d",
         "bot_id": "5ccea16ca51e681f0e8e2c2b"
+    },
+
+    "contest_match":
+    {
+        "group_id": "5cb5794383f1e10a1eddebb3",
+        "contest_id": "5cbeb05f35f461309c26da61",
+        "game": "Tank2",
+        "bot_id": "5ccea16ca51e681f0e8e2c2b"
     }
 }
