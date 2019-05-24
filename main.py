@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 22:04:40
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-04 00:59:26
+# @Last Modified time: 2019-05-24 16:52:02
 
 from core.const import LONG_RUNNING_MODE, SIMULATOR_ENV, MAP_WIDTH, MAP_HEIGHT,\
                     TANKS_PER_SIDE, SIDE_COUNT, BLUE_SIDE, RED_SIDE
@@ -15,6 +15,7 @@ from core.botzone import Tank2Botzone
 from core.player import Tank2Player
 from core.team import Tank2Team
 from core.strategy.status import Status
+from core.strategy.label import Label
 
 #{ BEGIN }#
 
@@ -103,30 +104,44 @@ def main(istream=None, ostream=None):
 
         if SIMULATOR_ENV:
             allStatus = [ player.get_status().copy() for player in myPlayers ]
+            allLabels = [ player.get_labels().copy() for player in myPlayers ]
 
         if SIMULATOR_ENV:
             oppActions = oppTeam.make_decision()
             oppAllStatus = [ player.get_status().copy() for player in oppPlayers ]
+            oppAllLabels = [ player.get_labels().copy() for player in oppPlayers ]
 
         if SIMULATOR_ENV:
             _CUT_OFF_RULE = "-" * 20
+            _SIDE_NAMES = ["Blue", "Red"]
+
             simulator_print("Decisions for next turn:")
             simulator_print(_CUT_OFF_RULE)
-            _SIDE_NAMES = ["Blue", "Red"]
-            def _print_decision(actions, side, allStatus):
+
+            def _print_decision(actions, side, allStatus, allLabels):
                 for id_, action in enumerate(actions):
-                    simulator_print("%s %02d: %s \t[status] %s" % (
-                        _SIDE_NAMES[side], id_+1, Action.get_name(action),
-                        ", ".join( Status.get_name(status) for status in allStatus[id_] ) ) )
-            _print_decision(actions, side, allStatus)
-            _print_decision(oppActions, 1-side, oppAllStatus)
+                    _output = "%-4s %02d: %-11s [status] %s" % (
+                            _SIDE_NAMES[side], id_+1, Action.get_name(action),
+                            ", ".join( Status.get_name(status) for status in allStatus[id_] ),
+                         )
+                    if allLabels[id_]:
+                        _output += "  [label] %s" % (
+                                ", ".join( Label.get_name(label) for label in allLabels[id_] )
+                            )
+                    simulator_print(_output)
+
+            _print_decision(actions, side, allStatus, allLabels)
+            _print_decision(oppActions, 1-side, oppAllStatus, oppAllLabels)
+
             simulator_print(_CUT_OFF_RULE)
             simulator_print("Actually actions on this turn:")
             simulator_print(_CUT_OFF_RULE)
+
             for side, tanks in enumerate(map_.tanks):
                 for id_, tank in enumerate(tanks):
                     simulator_print("%s %02d: %s" % (_SIDE_NAMES[side], id_+1,
                                         Action.get_name(tank.previousAction)))
+
             simulator_print(_CUT_OFF_RULE)
 
 

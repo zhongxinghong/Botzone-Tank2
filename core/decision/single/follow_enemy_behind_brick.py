@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-23 22:59:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 06:51:37
+# @Last Modified time: 2019-05-24 09:32:44
 
 __all__ = [
 
@@ -39,7 +39,7 @@ class FollowEnemyBehindBrickDecision(SingleDecisionMaker):
             and not Action.is_move(player.get_previous_action(back=1))
             ): # 上回合墙后有人
             with map_.rollback_to_previous():
-                action = battler.get_next_attack_action()
+                action = battler.get_next_attacking_action()
                 if Action.is_stay(action):
                     return
                 oppTank = battler.get_enemy_behind_brick(action, interval=-1) # 找到墙后敌人
@@ -71,7 +71,7 @@ class FollowEnemyBehindBrickDecision(SingleDecisionMaker):
             with map_.auto_undo_revert() as counter: # 有可能要多回合回滚
                 while map_.revert():
                     counter.increase()
-                    action = battler.get_next_attack_action()
+                    action = battler.get_next_attacking_action()
                     if Action.is_stay(action):
                         continue
                     oppTank = battler.get_enemy_behind_brick(action, interval=-1)

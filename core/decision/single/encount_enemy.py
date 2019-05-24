@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 02:49:04
+# @Last Modified time: 2019-05-24 18:05:35
 
 __all__ = [
 
@@ -17,6 +17,8 @@ from ...field import BrickField
 from ...strategy.status import Status
 from ...strategy.label import Label
 from ...strategy.evaluate import evaluate_aggressive
+from .withdrawal import WithdrawalDecision
+from .base_defense import BaseDefenseDecision
 
 #{ BEGIN }#
 
@@ -28,6 +30,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
     def _make_decision(self):
 
         player   = self._player
+        signal   = self._signal
         map_     = player._map
         tank     = player.tank
         battler  = player.battler
@@ -36,10 +39,10 @@ class EncountEnemyDecision(SingleDecisionMaker):
         Tank2Player = type(player)
         BattleTank  = type(battler)
 
-
         aroundEnemies = battler.get_enemies_around()
         if len(aroundEnemies) > 0:
             player.set_status(Status.ENCOUNT_ENEMY)
+
             if len(aroundEnemies) > 1: # 两个敌人，尝试逃跑
                 assert len(aroundEnemies) == 2 # 可能会遇到极其罕见的三人重叠
 
@@ -80,7 +83,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                     elif all( not oppBattler.canShoot for oppBattler in oppBattlers ):
                         # 均不能进攻的话，优先闪避到下回合没有敌人的位置（优先考虑拆家方向）
                         firstMoveAction = tuple()
-                        attackAction = battler.get_next_attack_action()
+                        attackAction = battler.get_next_attacking_action()
                         if Action.is_move(attackAction): # 如果是移动行为
                             firstMoveAction = ( attackAction, )
                         for action in firstMoveAction + Action.MOVE_ACTIONS:
@@ -121,7 +124,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                         # 没有办法对付 ..
                         player.set_status(Status.DYING)
                     # 无所谓的办法了...
-                    return player.try_make_decision(battler.get_next_attack_action())
+                    return player.try_make_decision(battler.get_next_attacking_action())
 
             # TODO:
             #   虽然说遇到了两个一条线上的敌人，但是这不意味着后一个敌人就没有威胁 5ccee460a51e681f0e8e5b17
@@ -151,9 +154,14 @@ class EncountEnemyDecision(SingleDecisionMaker):
                         oppPlayer.add_labels(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
 
 
-            # 根据当时的情况，评估侵略性
-            status = evaluate_aggressive(battler, oppBattler)
-            player.set_status(status)
+            #
+            # 在非 WITHDRAW 的情况下，评估当前侵略性
+            #
+            if not player.has_status(Status.WITHDRAW):
+                status = evaluate_aggressive(battler, oppBattler)
+                player.set_status(status)
+            else:
+                status = Status.WITHDRAW
 
             # 侵略模式/僵持模式
             #----------
@@ -169,7 +177,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                             player.set_status(Status.READY_TO_KILL_ENEMY)
                             return battler.shoot_to(oppBattler)
 
-                    attackAction = battler.get_next_attack_action() # 其他情况，优先进攻，不与其纠缠
+                    attackAction = battler.get_next_attacking_action() # 其他情况，优先进攻，不与其纠缠
                     realAction = player.try_make_decision(attackAction) # 默认的进攻路线
                     if Action.is_stay(realAction): # 存在风险
                         if Action.is_move(attackAction):
@@ -227,16 +235,16 @@ class EncountEnemyDecision(SingleDecisionMaker):
                         player.set_status(Status.PREVENT_BEING_KILLED)
                         return realAction
                     # 否则不予理会，直接移动或者反击
-                    action = player.try_make_decision(battler.get_next_attack_action())
+                    action = player.try_make_decision(battler.get_next_attacking_action())
                     if not Action.is_stay(action):
                         # 补丁
                         #----------------------------
                         # 针对两者距离为 2 的情况，不能一概而论！
                         #
                         if status == Status.STALEMENT: # 僵持模式考虑堵路
-                            _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                            _route = battler.get_route_to_enemy_by_move(oppBattler)
                             if _route.is_not_found():
-                                _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                                _route = battler.get_route_to_enemy_by_move(oppBattler, block_teammate=False)
                             assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
                             assert _route.length > 0, "unexpected overlapping enemy"
                             if _route.length == 2:
@@ -320,7 +328,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                     #
                     # 最佳方向是闪避向着进攻方向移动
                     #
-                    attackAction = battler.get_next_attack_action()
+                    attackAction = battler.get_next_attacking_action()
                     for action in dodgeActions: # 与进攻方向相同的方向是最好的
                         if Action.is_same_direction(action, attackAction):
                             realAction = player.try_make_decision(action) # 风险评估
@@ -431,7 +439,8 @@ class EncountEnemyDecision(SingleDecisionMaker):
                             player.set_status(Status.WILL_DODGE_TO_LONG_WAY)
                             return realAction
 
-                    player.set_status(Status.DYING) # 否则就凉了 ...
+                    if Action.is_stay(defenseAction):
+                        player.set_status(Status.DYING) # 否则就凉了 ...
                     return defenseAction
 
                 return Action.STAY
@@ -445,9 +454,8 @@ class EncountEnemyDecision(SingleDecisionMaker):
             # 4. 距离远仍然优先
             #
             # elif status == DEFENSIVE_STATUS:
-            else: # status == DEFENSIVE_STATUS or status == STALEMATE_STATUS:
-                # attackAction = self.try_make_decision(battler.get_next_attack_action()) # 默认的侵略行为
-
+                # attackAction = self.try_make_decision(battler.get_next_attacking_action()) # 默认的侵略行为
+            elif status == Status.DEFENSIVE:
                 if not oppBattler.canShoot:
 
                     if len( oppBattler.try_dodge(battler) ) == 0:
@@ -459,9 +467,9 @@ class EncountEnemyDecision(SingleDecisionMaker):
                     #-------------------------------
                     # 优先堵路，根据双方距离判断
                     #
-                    _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                    _route = battler.get_route_to_enemy_by_move(oppBattler)
                     if _route.is_not_found():
-                        _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                        _route = battler.get_route_to_enemy_by_move(oppBattler, block_teammate=False)
                     assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
                     assert _route.length > 0, "unexpected overlapping enemy"
 
@@ -568,13 +576,40 @@ class EncountEnemyDecision(SingleDecisionMaker):
 
                 return Action.STAY
 
-            # 僵持模式？
-            #--------------
-            # 双方进攻距离相近，可能持平
-            # # TODO:
-            #   观察队友？支援？侵略？
-            # 1. 优先防御
-            # 2. ....
             #
-            # elif status == STALEMATE_STATUS:
+            # 回撤模式
+            #------------
+            # 1. 优先回撤
+            # 2. 如果处在守卫状况，根据所处位置，选择反击或堵路
+            #
+            elif status == Status.WITHDRAW:
+                base = map_.bases[battler.side]
+                if not battler.is_closest_to(base):
+                    with player.create_snapshot():
+                        decision = WithdrawalDecision(player, signal)
+                        action = decision.make_decision()
+                        if decision.is_handled(action):
+                            with map_.simulate_one_action(battler, action):
+                                if oppTank not in battler.get_enemies_around(): # 安全行为
+                                    return  # 留给 withdraw 处理
+                else:
+                    # 现在我方坦克已经处在基地附近
+                    with player.create_snapshot():
+                        decision = BaseDefenseDecision(player, signal)
+                        action = decision.make_decision()
+                        if decision.is_handled(action): # 符合 base defense 的条件
+                            with map_.simulate_one_action(battler, action):
+                                if oppTank not in battler.get_enemies_around(): # 安全行为
+                                    return  # 留给 base defense
+                #
+                # 否则就是不安全行为，应该予以反击
+                #
+                action = battler.shoot_to(oppBattler)
+                realAction = player.try_make_decision(action) # 射击或停留
+                if Action.is_shoot(action):
+                    player.set_status(Status.READY_TO_FIGHT_BACK)
+
+                return realAction
+
+
 #{ END }#

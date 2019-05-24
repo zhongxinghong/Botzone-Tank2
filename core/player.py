@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 04:14:50
+# @Last Modified time: 2019-05-24 17:35:46
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -21,10 +21,11 @@ from .field import TankField
 from .tank import BattleTank
 from .strategy.signal import Signal
 from .strategy.status import Status
+from .strategy.label import Label
 from .decision.abstract import DecisionMaker
 from .decision import DecisionChain, MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
     OverlappingDecision, EncountEnemyDecision, AttackBaseDecision, LeaveTeammateDecision,\
-    BehindBrickDecision, FollowEnemyBehindBrickDecision
+    BehindBrickDecision, FollowEnemyBehindBrickDecision, WithdrawalDecision
 
 #{ BEGIN }#
 
@@ -185,10 +186,10 @@ class Tank2Player(Player):
             assert isinstance(player, Tank2Player) and player.side != self.side
         self._opponents = opponents
 
-    def get_risk_enemy(self):
+    def get_risky_enemy(self):
         return self._riskyEnemy
 
-    def set_risk_enemy(self, enemy):
+    def set_risky_enemy(self, enemy):
         self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
 
     def get_current_decision(self): # 返回已经做出的决策
@@ -437,7 +438,7 @@ class Tank2Player(Player):
         map_ = self._map
         battler = self._battler
 
-        _route = battler.get_route_to_enemy_by_movement(oppBattler)
+        _route = battler.get_route_to_enemy_by_move(oppBattler)
         assert _route.length == 2
 
         action = oppBattler.move_to(battler)
@@ -509,30 +510,36 @@ class Tank2Player(Player):
 
     def _make_decision(self, signal):
 
-        battler  = self._battler
+        player  = self
+        battler = player.battler
 
-        if self.defeated:
-            self.set_status(Status.DIED)
+        if player.defeated:
+            player.set_status(Status.DIED)
             return self.__class__.UNHANDLED_RESULT
 
         if not battler.canShoot:
-            self.set_status(Status.RELOADING)
+            player.set_status(Status.RELOADING)
 
-        if battler.is_face_to_enemy_base(ignore_brick=True):
-            self.set_status(Status.FACING_TO_ENEMY_BASE)
+        if battler.is_face_to_enemy_base():
+            player.set_status(Status.FACING_TO_ENEMY_BASE)
+
+        if player.has_label(Label.KEEP_ON_WITHDRAWING):
+            player.remove_status(Status.AGGRESSIVE, Status.DEFENSIVE, Status.STALEMENT)
+            player.set_status(Status.WITHDRAW) # 先保持着 这个状态
 
 
         decisions = DecisionChain(
 
-                    LeaveTeammateDecision(self, signal),
-                    AttackBaseDecision(self, signal),
-                    EncountEnemyDecision(self, signal),
-                    OverlappingDecision(self, signal),
-                    BaseDefenseDecision(self, signal),
-                    BehindBrickDecision(self, signal),
-                    FollowEnemyBehindBrickDecision(self, signal),
-                    ActiveDefenseDecision(self, signal),
-                    MarchingDecision(self, signal),
+                    LeaveTeammateDecision(player, signal),
+                    AttackBaseDecision(player, signal),
+                    EncountEnemyDecision(player, signal),
+                    OverlappingDecision(player, signal),
+                    BaseDefenseDecision(player, signal),
+                    BehindBrickDecision(player, signal),
+                    FollowEnemyBehindBrickDecision(player, signal),
+                    WithdrawalDecision(player, signal),
+                    ActiveDefenseDecision(player, signal),
+                    MarchingDecision(player, signal),
 
                 )
 

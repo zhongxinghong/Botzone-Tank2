@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:46:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 03:56:39
+# @Last Modified time: 2019-05-24 17:42:17
 
 __all__ = [
 
@@ -56,8 +56,11 @@ class OverlappingDecision(SingleDecisionMaker):
             oppBattler = BattleTank(oppTank)
             oppPlayer = Tank2Player(oppBattler)
 
-            status = evaluate_aggressive(battler, oppBattler)
-            player.set_status(status)
+            if not player.has_status(Status.WITHDRAW):
+                status = evaluate_aggressive(battler, oppBattler)
+                player.set_status(status)
+            else:
+                status = Status.DEFENSIVE  # 看作是防御
 
             #
             # 先检查对方上回合是否在跟随我移动，以及时切换决策模式 ...
@@ -91,7 +94,7 @@ class OverlappingDecision(SingleDecisionMaker):
                 if (oppPlayer.has_label(Label.IMMEDIATELY_BREAK_OVERLAP_BY_MOVE)
                     and not player.has_status_in_previous_turns(Status.OVERLAP_WITH_ENEMY) # 上回合不重叠
                     ):
-                    action = battler.get_next_attack_action()
+                    action = battler.get_next_attacking_action()
                     if Action.is_move(action):
                         if battler.canShoot:
                             player.set_status(Status.READY_TO_BREAK_OVERLAP,
@@ -127,7 +130,7 @@ class OverlappingDecision(SingleDecisionMaker):
             else:
                 _leadingLength = route2.length - route1.length # 我方领先步数
                 debug_print(battler, _leadingLength)
-                action = battler.get_next_attack_action(route1)
+                action = battler.get_next_attacking_action(route1)
                 if Action.is_shoot(action):
                     # TODO:
                     #   是否有必要考虑射击行为？
@@ -141,7 +144,7 @@ class OverlappingDecision(SingleDecisionMaker):
                     # 因此此处将相同的行为进行缓存，为了减少判断次数
                     _consideredActions = set()
                     for route in allRoutes:
-                        _enemyAttackAction = oppBattler.get_next_attack_action(route)
+                        _enemyAttackAction = oppBattler.get_next_attacking_action(route)
                         if _enemyAttackAction in _consideredActions:
                             continue
                         _consideredActions.add(_enemyAttackAction)
@@ -177,7 +180,7 @@ class OverlappingDecision(SingleDecisionMaker):
                     _consideredActions = set()
                     for route in allRoutes:
 
-                        _enemyAttackAction = oppBattler.get_next_attack_action(route)
+                        _enemyAttackAction = oppBattler.get_next_attacking_action(route)
                         if _enemyAttackAction in _consideredActions:
                             continue
                         _consideredActions.add(_enemyAttackAction)
@@ -213,7 +216,7 @@ class OverlappingDecision(SingleDecisionMaker):
                     pass
 
             if _shouldActiveBreakOverlap:
-                action = battler.get_next_attack_action(route1)
+                action = battler.get_next_attacking_action(route1)
                 if Action.is_move(action):
                     if player.is_safe_to_break_overlap_by_move(action, oppBattler):
                         player.set_status(Status.READY_TO_BREAK_OVERLAP)
@@ -244,7 +247,7 @@ class OverlappingDecision(SingleDecisionMaker):
                 # 对方不能射击，对自己没有风险，或者是符合了主动打破重叠的条件
                 if not oppBattler.canShoot or _shouldBreakOverlap:
                     # 尝试继续行军
-                    action = battler.get_next_attack_action()
+                    action = battler.get_next_attacking_action()
                     if Action.is_move(action):
                         if _shouldBreakOverlap:
                             #
@@ -362,7 +365,7 @@ class OverlappingDecision(SingleDecisionMaker):
                     # 这就有可能错失防御机会
                     #
                     for enemyAttackRoute in oppBattler.get_all_shortest_attacking_routes():
-                        oppAction = oppBattler.get_next_attack_action(enemyAttackRoute) # 模拟对方的侵略性算法
+                        oppAction = oppBattler.get_next_attacking_action(enemyAttackRoute) # 模拟对方的侵略性算法
                         if Action.is_move(oppAction) or Action.is_shoot(oppAction): # 大概率是移动
                             # 主要是为了确定方向
                             oppAction %= 4

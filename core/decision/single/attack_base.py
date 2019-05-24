@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:42:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-16 03:55:51
+# @Last Modified time: 2019-05-24 09:32:27
 
 __all__ = [
 
@@ -33,6 +33,6 @@ class AttackBaseDecision(SingleDecisionMaker):
 
         if battler.is_face_to_enemy_base() and battler.canShoot:
             player.set_status(Status.READY_TO_ATTACK_BASE) # 特殊状态
-            return battler.get_next_attack_action() # 必定是射击 ...
+            return battler.get_next_attacking_action() # 必定是射击 ...
 
 #{ END }#

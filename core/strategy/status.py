@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-01 18:00:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 03:24:25
+# @Last Modified time: 2019-05-24 14:29:44
 """
 当前状态
 
@@ -27,11 +27,11 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     NONE       = 0  # 空状态
 
     AGGRESSIVE = 1  # 侵略性的
-    DEFENSIVE  = 2  # 防御性的
-    STALEMENT  = 3  # 僵持的
-    DYING      = 4  # 准备要挂了
-    DIED       = 5  # 已经挂了
-
+    STALEMENT  = 2  # 僵持的
+    DEFENSIVE  = 3  # 防御性的
+    WITHDRAW   = 4  # 撤退性的
+    DYING      = 5  # 准备要挂了
+    DIED       = 6  # 已经挂了
     RELOADING  = 9  # 正在装弹，下回合无法射击
 
     ENCOUNT_ENEMY      = 11
@@ -59,6 +59,9 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     READY_TO_LEAVE_TEAMMATE      = 38  # 准备和队友打破重叠
     FACING_TO_ENEMY_BASE         = 39  # 正面敌人基地，或者和敌人基地处在同一直线上
     READY_TO_FOLLOW_ENEMY        = 40  # 准备跟随墙后敌人的移动方向
+    READY_TO_WITHDRAW            = 41  # 准备后撤
+    STAY_FOR_GUARDING_OUR_BASE   = 42  # 已经到达我方基地附近，准备停留等待
+    WAIT_FOR_WITHDRAWING         = 43  # 等待回防，可能是由于敌人阻挡
 
     READY_TO_PREPARE_FOR_BREAK_BRICK = 51 # 准备为破墙而准备闪避路线
     READY_TO_BREAK_BRICK             = 52 # 准备破墙
@@ -80,7 +83,7 @@ class Status(object, metaclass=UniqueIntEnumMeta):
         if __class__.__Status_Name_Cache is None:
             cache = __class__.__Status_Name_Cache = {}
             for k, v in __class__.__dict__.items():
-                if not k.startswith("__"):
+                if not k.startswith("_"):
                     if isinstance(v, int):
                         key = k.title()
                         cache[v] = key

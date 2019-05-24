@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 00:41:07
+# @Last Modified time: 2019-05-24 17:45:05
 """
 状况评估
 """
@@ -12,6 +12,7 @@ __all__ = [
     "evaluate_aggressive",
     "estimate_route_similarity",
     "estimate_enemy_effect_on_route",
+    "estimate_route_blocking",
 
     ]
 
@@ -25,13 +26,15 @@ from .search import get_searching_directions
 
 #{ BEGIN }#
 
-def evaluate_aggressive(battler, oppBattler):
+def evaluate_aggressive(battler, oppBattler, strict=False):
     """
     根据敌我两架坦克的攻击线路长短，衡量当前侵略性
 
     Input:
         - battler      BattleTank
         - oppBattler   BattleTank
+        - strict   bool   是否严格依据路线长度和两方基地位置进行评估
+                          如果为 False ，则还会考虑其他的因素
 
     Return:
         [status]
@@ -68,12 +71,22 @@ def evaluate_aggressive(battler, oppBattler):
     else: # 在我方半边地盘，会增加防御的可能性
 
         if leadingLength >= 1:
-            status = Status.AGGRESSIVE
-        elif leadingLength <= -1:
-            status = Status.DEFENSIVE
+            status = Status.AGGRESSIVE # [1, +)
+        elif -1 < leadingLength < 1:
+            status = Status.STALEMENT  # (-1, 1) == 0
+        elif -2 <= leadingLength <= -1:
+            status = Status.DEFENSIVE  # [-2, -1]
         else:
-            status = Status.STALEMENT
+            status = Status.WITHDRAW   # (-, -2)
 
+    if strict: # 严格模式直接返回评估状态
+        return status
+
+    #
+    # 撤退性状态直接返回
+    #
+    if status == Status.WITHDRAW:
+        return status
 
     #
     # 尽可能用攻击性策略！
@@ -238,5 +251,40 @@ def estimate_enemy_effect_on_route(route, player):
 
     return realLength
 
+
+def estimate_route_blocking(route):
+    """
+    评估路线上 block 类型块的数量
+    ----------------------------
+    被用于撤退路线的评估
+
+    撤退行为发生在己方基地，不宜过度攻击墙，否则可能会削弱基地的防御性
+
+
+    实现方法
+    -------------
+    让 block 类型的块的权重增加，这样就可以让 block 更多的路线的长度增加
+
+
+    TODO:
+        是否对含有相同 block 的路线上的 block 进行进一步的评估？也就是认为基地外围的 block 的权重更高？
+
+    """
+    x2, y2 = route.end
+
+    LENGTH_INCREMENT_OF_BLOCK           = 1  # 遇到墙，权重加 1
+    LENGTH_INCREMENT_OF_INNERMOST_BLOCK = 2  # 遇到最内层的墙，权重加 2
+
+    realLength = route.length
+
+    for node in route:
+        x1, y1 = node.xy
+        if node.weight == 2: # 权重为 2 的块一定是 block 类型
+            if np.abs(x1 - x2) <= 1 and np.abs(y1 - y2) <= 1: # 位于 end 的外围
+                realLength += LENGTH_INCREMENT_OF_INNERMOST_BLOCK
+            else:
+                realLength += LENGTH_INCREMENT_OF_BLOCK
+
+    return realLength
 
 #{ END }#

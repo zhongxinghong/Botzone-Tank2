@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 04:23:46
+# @Last Modified time: 2019-05-24 17:36:40
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -176,6 +176,7 @@ class BattleTank(object):
     def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0, **kwargs):
         """
         获得所有最短的进攻路线
+        --------------------------
 
         Input:
             - ignore_enemies   bool   是否将敌人视为空
@@ -241,7 +242,7 @@ class BattleTank(object):
             return route # 直接返回第一个 route
 
 
-    def get_next_attack_action(self, route=None):
+    def get_next_attacking_action(self, route=None):
         """
         下一个进攻行为，不考虑四周的敌人
 
@@ -308,7 +309,93 @@ class BattleTank(object):
                     return Action.STAY # 仅需要防止射到队友
             return action
 
-        return Action.STAY # 不能射击，只好等待
+        # 不能射击，只好等待
+        return Action.STAY
+
+
+    def get_all_shortest_defensive_routes(self, delay=0, **kwargs):
+        """
+        获得所有的回防路线
+        ----------------
+
+        同 get_all_shortest_attacking_routes
+
+        """
+        map_ = self._map
+        tank = self._tank
+        side = tank.side
+        base = map_.bases[side]
+
+        matrix_T = map_.matrix_T
+
+        kwargs.setdefault("middle_first", True)
+
+        routes = find_all_routes_for_move(
+                        tank.xy,
+                        base.xy,
+                        matrix_T,
+                        **kwargs,
+                        )
+
+        minLength = INFINITY_ROUTE_LENGTH
+
+        for route in routes:
+            if not route.is_not_found():
+                if minLength == INFINITY_ROUTE_LENGTH:
+                    minLength = route.length # 初始化 minLength
+                if route.length - minLength > delay:
+                    break
+                yield route
+            else: # 否则就是 [ Route() ] 表示没有找到路径
+                yield route
+                break
+
+
+    def get_shortest_defensive_route(self, *args, **kwargs):
+        """
+        获取默认的最短路线
+        """
+        for route in self.get_all_shortest_defensive_routes(*args, **kwargs):
+            return route # 直接返回第一个
+
+
+    def get_next_defensive_action(self, route=None):
+        """
+        获得下一个防御动作，不考虑周围敌人
+        """
+        tank = self._tank
+        map_ = self._map
+        base = map_.bases[tank.side]
+
+        if route is None:
+            route = self.get_shortest_defensive_route()
+
+        if route.is_not_found():
+            return Action.STAY
+        elif route.length == 0:
+            return Action.STAY
+
+        x1, y1 = tank.xy
+        x3, y3 = route[1].xy # 跳过 start
+        action = Action.get_action(x1, y1, x3, y3) # move-action
+        dx, dy = Action.DIRECTION_OF_ACTION_XY[action]
+
+         ## 优先移动 ##
+        if map_.is_valid_move_action(tank, action):
+            return action
+
+        ## 遇到墙/己方基地/坦克，不能移动
+        if self.canShoot: # 尝试射击
+            action += 4
+            for field in self.get_destroyed_fields_if_shoot(action):
+                if isinstance(field, TankField) and field.side == tank.side:
+                    return Action.STAY # 仅需要防止射到队友
+                elif isinstance(field, BaseField) and field is base:
+                    return Action.STAY # 遇到己方基地
+            return action
+
+        # 否则就是等待了
+        return Action.STAY
 
 
     def get_shortest_route_to_enemy(self, oppTank):
@@ -340,7 +427,7 @@ class BattleTank(object):
         return route
 
 
-    def get_route_to_enemy_by_movement(self, oppTank, block_teammate=True):
+    def get_route_to_enemy_by_move(self, oppTank, block_teammate=True):
         """
         近身条件下，获得到达对方的路劲
         """
@@ -639,19 +726,19 @@ class BattleTank(object):
         return self.move_to(oppTank) + 4
 
 
-    def on_the_same_line_with(self, oppTank, ignore_brick=True):
+    def on_the_same_line_with(self, field, ignore_brick=True):
         """
-        是否和敌人处在同一条直线上
+        是否和某个块处在同一条直线上
 
         Input:
-            oppTank        TankField/BattleTank    所有带坐标的 tank 对象
+            field          任何带坐标的 tank 对象
             ignore_brick   bool    是否忽略土墙的阻挡
 
         """
         tank = self._tank
         map_ = self._map
         x1, y1 = tank.xy
-        x2, y2 = oppTank.xy
+        x2, y2 = field.xy
 
         if x1 != x2 and y1 != y2: # 坐标上直接可以否掉的情况
             return False
@@ -671,25 +758,25 @@ class BattleTank(object):
             y += dy
             if not map_.in_map(x, y):
                 break
-            fields = map_[x, y]
-            if len(fields) == 0:
+            _fields = map_[x, y]
+            if len(_fields) == 0:
                 continue
-            elif len(fields) == 2:
-                if oppTank.xy == (x, y): # 说明敌方坦克在多人坦克里
+            elif len(_fields) == 2:
+                if field.xy == (x, y): # 说明处在在多人坦克里
                     return True
                 else: # 否则不算
                     return False
             else:
-                field = fields[0]
-                if isinstance(field, (EmptyField, WaterField) ):
+                _field = _fields[0]
+                if _field is field:
+                    return True # 是这个块
+                elif isinstance(_field, (EmptyField, WaterField) ):
                     continue
-                elif isinstance(field, BrickField):
+                elif isinstance(_field, BrickField):
                     if ignore_brick: # 这种情况将 brick 视为空
                         continue
                     else:
                         return False
-                elif isinstance(field, TankField) and field.xy == oppTank.xy:
-                    return True
                 else:
                     return False # 其他所有的 block 类型均视为 False
 
@@ -747,46 +834,32 @@ class BattleTank(object):
 
     def is_face_to_enemy_base(self, ignore_brick=False):
         """
-        是否直面对方基地，或者是与敌人基地处在同一条直线上
+        是否直面对方基地，或者是与敌人基地处在同一条直线上 （一个历史遗留接口）
 
         Input:
             - ignore_brick   bool   是否忽略土墙，如果忽略，那么只需要基地和坦克
                                     处在同一直线上即可
         """
-        tank = self._tank
-        map_ = self._map
-        oppSide = 1 - tank.side
-        oppBase = map_.bases[oppSide]
+        oppBase = self._map.bases[1 - self.side]
+        return self.on_the_same_line_with(oppBase, ignore_brick=ignore_brick)
 
-        x1, y1 = tank.xy
-        x2, y2 = oppBase.xy
-        for dx, dy in get_searching_directions(x1, y1, x2, y2):
-            x, y = tank.xy
-            while True:
-                x += dx
-                y += dy
-                if not map_.in_map(x, y):
-                    break
-                fields = map_[x, y]
-                if len(fields) == 0:
-                    continue
-                elif len(fields) > 1:
-                    break # 两个坦克
-                else:
-                    field = fields[0]
-                    if isinstance(field, (WaterField, EmptyField) ):
-                        continue # 非 block 情况
-                    elif isinstance(field, BrickField):
-                        if ignore_brick:
-                            continue
-                        else:
-                            break
-                    elif field is oppBase:
-                        return True
-                    else:
-                        break
 
-        return False
+    def is_closest_to(self, field, allow_diagonal=True):
+        """
+        是否紧贴某个 field 也就是与之相邻或恰为对角
+
+        Input:
+            - field            Field   事实上只要带有 xy 属性的类都可以
+            - allow_diagonal   bool    是否将对角线关系也算入
+
+        """
+        x1, y1 = self.xy
+        x2, y2 = field.xy
+        isInnermost = ( np.abs(x1 - x2) <= 1 and np.abs(y1 - y2) <= 1 )
+        if allow_diagonal:
+            return isInnermost
+        else:
+            return isInnermost and (x1 == x2 or y1 == y2) # 还需要共线
 
 
     def get_enemy_behind_brick(self, action, interval=0):
@@ -905,14 +978,14 @@ class BattleTank(object):
             else:
                 deltaLengthWithEnemyList = []
                 for enemy in enemies:
-                    route1 = self.get_route_to_enemy_by_movement(enemy)
+                    route1 = self.get_route_to_enemy_by_move(enemy)
                     if route1.is_not_found():
-                        route1 = self.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+                        route1 = self.get_route_to_enemy_by_move(enemy, block_teammate=False)
                         if route1.is_not_found(): # 我无法到达敌人的位置？？？
                             continue
-                    route2 = teammateBattler.get_route_to_enemy_by_movement(enemy)
+                    route2 = teammateBattler.get_route_to_enemy_by_move(enemy)
                     if route2.is_not_found():
-                        route2 = teammateBattler.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+                        route2 = teammateBattler.get_route_to_enemy_by_move(enemy, block_teammate=False)
 
                     if route2.is_not_found():
                         deltaLength = route1.length # 这样做是否合理？
@@ -926,10 +999,10 @@ class BattleTank(object):
 
         # 否则为单人决策
 
-        routes = [ self.get_route_to_enemy_by_movement(enemy) for enemy in enemies ]
+        routes = [ self.get_route_to_enemy_by_move(enemy) for enemy in enemies ]
 
         if all( route.is_not_found() for route in routes ): # 均不可到达？
-            routes = [ self.get_route_to_enemy_by_movement(enemy, block_teammate=False)
+            routes = [ self.get_route_to_enemy_by_move(enemy, block_teammate=False)
                             for enemy in enemies ] # 因为队友阻塞 ?
 
         routeWithEnemyList = [

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 06:18:21
+# @Last Modified time: 2019-05-24 14:33:05
 
 __all__ = [
 
@@ -54,7 +54,7 @@ class MarchingDecision(SingleDecisionMaker):
         # (inserted) 强攻信号
         #-------------------------
         if signal == Signal.FORCED_MARCH:
-            attackAction = battler.get_next_attack_action() # 应该是移动行为，且不需检查安全性
+            attackAction = battler.get_next_attacking_action() # 应该是移动行为，且不需检查安全性
             player.set_status(Status.READY_TO_FORCED_MARCH)
             return ( attackAction, Signal.READY_TO_FORCED_MARCH )
 
@@ -110,7 +110,7 @@ class MarchingDecision(SingleDecisionMaker):
                                     Status.PREVENT_BEING_KILLED,
                                     Status.HAS_ENEMY_BEHIND_BRICK )
 
-                attackAction = battler.get_next_attack_action(route)
+                attackAction = battler.get_next_attacking_action(route)
 
                 if Action.is_stay(attackAction): # 下一步是停留，就没必要过多判断了
                     returnAction = attackAction
@@ -135,7 +135,7 @@ class MarchingDecision(SingleDecisionMaker):
                         if (player.has_status_in_previous_turns(Status.WAIT_FOR_MARCHING, turns=1)
                             and player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1)
                             ): # 即将停留第二回合
-                            riskyBattler = BattleTank(player.get_risk_enemy())
+                            riskyBattler = BattleTank(player.get_risky_enemy())
                             riskyPlayer = Tank2Player(riskyBattler)
                             #
                             # 判断敌人不会攻击我的标准
@@ -228,7 +228,7 @@ class MarchingDecision(SingleDecisionMaker):
                         # 如果为射击行为，检查是否是墙后敌人造成的
                         enemy = battler.get_enemy_behind_brick(attackAction, interval=-1)
                         if enemy is not None:
-                            player.set_risk_enemy(BattleTank(enemy)) # 额外指定一下，确保是这个敌人造成的
+                            player.set_risky_enemy(BattleTank(enemy)) # 额外指定一下，确保是这个敌人造成的
                             player.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
 
                         #
@@ -237,7 +237,7 @@ class MarchingDecision(SingleDecisionMaker):
                         # 一般会延误战机。这种情况下应该判定为敌方坦克不会来尝试击杀我方坦克，那么就继续攻击
                         # 5ce57074d2337e01c7a7b128
                         #
-                        oppBattler = player.get_risk_enemy()
+                        oppBattler = player.get_risky_enemy()
                         if (battler.is_in_enemy_site() # 双方均在对方基地方时才触发
                             and oppBattler.is_in_enemy_site()
                             ):
@@ -247,7 +247,7 @@ class MarchingDecision(SingleDecisionMaker):
                             #
                             _consideredActions = set() # 缓存已经考虑过的行为
                             for route in oppBattler.get_all_shortest_attacking_routes():
-                                _action = oppBattler.get_next_attack_action()
+                                _action = oppBattler.get_next_attacking_action()
                                 if _action in _consideredActions:
                                     continue
                                 _consideredActions.add(_action)
@@ -419,7 +419,7 @@ class MarchingDecision(SingleDecisionMaker):
                                 break
 
                         # 考虑是否隔墙僵持
-                        _action = teammateBattler.get_next_attack_action()
+                        _action = teammateBattler.get_next_attacking_action()
                         if not Action.is_stay(_action):
                             enemy = teammateBattler.get_enemy_behind_brick(_action, interval=-1)
                             if enemy is oppTank: # 和队友隔墙僵持的敌人可以忽略
@@ -427,7 +427,7 @@ class MarchingDecision(SingleDecisionMaker):
 
                         # 考虑是否和队友僵持
                         if teammateBattler.get_manhattan_distance_to(oppBattler) == 2:
-                            _action = oppBattler.get_next_attack_action()
+                            _action = oppBattler.get_next_attacking_action()
                             with map_.simulate_one_action(oppBattler, _action): # 模拟一步后和队友相遇
                                 if teammateBattler.get_manhattan_distance_to(oppBattler) == 1:
                                     _shouldStay = False

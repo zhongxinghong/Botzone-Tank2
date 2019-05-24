@@ -134,6 +134,10 @@
     },
     {
         "package": "decision/single",
+        "file": "../core/decision/single/withdrawal.py"
+    },
+    {
+        "package": "decision/single",
         "file": "../core/decision/single/active_defense.py"
     },
     {

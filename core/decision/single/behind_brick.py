@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-20 09:12:48
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-21 20:58:05
+# @Last Modified time: 2019-05-24 14:33:07
 
 __all__ = [
 
@@ -48,7 +48,7 @@ class BehindBrickDecision(RespondTeamSignalDecisionMaker):
         #
         if signal == Signal.PREPARE_FOR_BREAK_BRICK:
 
-            attackAction = battler.get_next_attack_action() # 只考虑攻击路径上的敌人
+            attackAction = battler.get_next_attacking_action() # 只考虑攻击路径上的敌人
             oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
 
             '''_undoRevertTurns = 0
@@ -70,7 +70,7 @@ class BehindBrickDecision(RespondTeamSignalDecisionMaker):
 
                 player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
                 player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
-                player.set_risk_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
+                player.set_risky_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
 
                 dodgeActions = battler.try_dodge(oppTank)
                 if len(dodgeActions) == 0:

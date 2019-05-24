@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-08 23:18:15
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 01:14:31
+# @Last Modified time: 2019-05-24 10:46:28
 
 __all__ = [
 
@@ -44,11 +44,11 @@ class RouteNode(object):
     搜索得到路径后，用于对路径的节点进行对象化的描述
 
     Property:
-        - x               int           坐标 x
-        - y               int           坐标 y
+        - x               int          坐标 x
+        - y               int          坐标 y
         - xy              (int, int)   坐标 (x, y)
-        - weight          int           节点权重，相当于走过这个节点需要多少步
-        - arrivalAction   int           通过什么方式到达这个节点的
+        - weight          int          节点权重，相当于走过这个节点需要多少步
+        - arrivalAction   int          通过什么方式到达这个节点的
 
     """
     def __init__(self, x, y, weight=1, arrival_action=DUMMY_ACTION):
@@ -94,10 +94,10 @@ class Route(object):
     用于对搜索得到的路径进行对象化的描述
 
     Property:
-        - nodes    [RouteNode]    从 start -> end 的节点链
-        - length   int            路径长度
-        - start    RouteNode      起点节点
-        - end      RouteNode      终点节点
+        - nodes    [RouteNode]   从 start -> end 的节点链
+        - length   int           路径长度
+        - start    (x, y)        起点坐标
+        - end      (x, y)        终点坐标
 
     Method:
         - is_not_found

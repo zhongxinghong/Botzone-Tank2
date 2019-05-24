@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:03:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 04:42:28
+# @Last Modified time: 2019-05-24 14:33:06
 
 __all__ = [
 
@@ -68,9 +68,9 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                 # 由于两者相对的情况在前面的 encount enemy 时会被处理，这里如果遇到这种情况
                 # 那么说明两者是出于不相对的对角线位置。
                 #
-                _route = battler.get_route_to_enemy_by_movement(oppBattler)
+                _route = battler.get_route_to_enemy_by_move(oppBattler)
                 if _route.is_not_found():
-                    _route = battler.get_route_to_enemy_by_movement(oppBattler, block_teammate=False)
+                    _route = battler.get_route_to_enemy_by_move(oppBattler, block_teammate=False)
                 assert not _route.is_not_found(), "route not found ?" # 必定能找到路！
                 assert _route.length > 0, "unexpected overlapping enemy"
                 if _route.length == 2:
@@ -105,7 +105,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                     # 才算是我堵不住他的路，否则仍然视为堵路成功 5cd356e5a51e681f0e921453
                     #
                     x0, y0 = oppBattler.xy # 保存原始坐标
-                    enemyMoveAction = oppBattler.get_next_attack_action(enemyAttackRoute1)
+                    enemyMoveAction = oppBattler.get_next_attacking_action(enemyAttackRoute1)
                     # ssert Action.is_move(enemyMoveAction) # 应该是移动
                     _shouldStay = False
                     with map_.simulate_one_action(oppBattler, enemyMoveAction):
@@ -231,7 +231,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                         if Action.is_move(realAction):
                             willMove = True
                         elif player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 打破僵局
-                            oppPlayer = Tank2Player(player.get_risk_enemy())
+                            oppPlayer = Tank2Player(player.get_risky_enemy())
                             if (oppPlayer.battler.canShoot # 当回合可以射击
                                 and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
                                 ): # 说明敌人大概率不打算攻击我
@@ -259,7 +259,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                                             return moveAction
 
 
-                attackAction = battler.get_next_attack_action(closestAttackRoute)
+                attackAction = battler.get_next_attacking_action(closestAttackRoute)
                 realAction = player.try_make_decision(attackAction)
 
                 #
