@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-08 23:18:15
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 14:16:24
+# @Last Modified time: 2019-05-24 01:14:31
 
 __all__ = [
 
@@ -19,7 +19,7 @@ __all__ = [
 
     ]
 
-from ..global_ import np
+from ..global_ import np, deepcopy
 from ..utils import CachedProperty
 from ..field import BaseField, BrickField, TankField
 
@@ -77,11 +77,14 @@ class RouteNode(object):
     def arrivalAction(self):
         return self._arrivalAction
 
-    def copy(self):
-        return RouteNode(self._x, self._y, self._weight, self._arrivalAction)
-
     def __repr__(self):
         return str( (self._x, self._y, self._weight, self._arrivalAction) )
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self):
+        return RouteNode(self._x, self._y, self._weight, self._arrivalAction)
 
 
 class Route(object):
@@ -216,5 +219,11 @@ class Route(object):
 
     def __repr__(self):
         return "Route(%s)" % self.nodes
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self):
+        return Route(deepcopy(self._nodeChain))
 
 #{ END }#

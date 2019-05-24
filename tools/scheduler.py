@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:38:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 16:49:47
+# @Last Modified time: 2019-05-23 19:14:09
 """
 定时任务调度器
 ---------------------
@@ -28,6 +28,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from _lib.scheduler.tasks import (
 
     task_botzone_login,
+    task_download_favorite_matches,
     task_download_rank_matches,
     task_download_global_matches,
     task_download_previous_global_matches,
@@ -41,16 +42,19 @@ def main():
 
     ## 所有事件均预先执行一次 ##
     task_botzone_login()
+    task_download_favorite_matches()
     task_download_rank_matches()
     # task_download_global_matches()
 
     ## 只执行一次的特殊事件 ##
     task_download_previous_global_matches()
+    #task_download_contest_matches()
 
 
     scheduler = BackgroundScheduler()
 
     scheduler.add_job(task_botzone_login, "interval", hours=6, id="botzone_login")
+    scheduler.add_job(task_download_favorite_matches, "interval", minutes=5, id="download_favorite_matches")
     scheduler.add_job(task_download_rank_matches, "interval", minutes=10, id="download_rank_matches")
     scheduler.add_job(task_download_global_matches, "interval", minutes=1, id="download_global_matches")
 
@@ -66,4 +70,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    #task_download_contest_matches()

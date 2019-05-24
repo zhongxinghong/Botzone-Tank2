@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 16:17:12
+# @Last Modified time: 2019-05-24 04:14:50
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -14,7 +14,7 @@ __all__ = [
 
     ]
 
-from .global_ import np
+from .global_ import np, contextmanager, deepcopy
 from .utils import debug_print, debug_pprint
 from .action import Action
 from .field import TankField
@@ -24,13 +24,18 @@ from .strategy.status import Status
 from .decision.abstract import DecisionMaker
 from .decision import DecisionChain, MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
     OverlappingDecision, EncountEnemyDecision, AttackBaseDecision, LeaveTeammateDecision,\
-    BehindBrickDecision
+    BehindBrickDecision, FollowEnemyBehindBrickDecision
 
 #{ BEGIN }#
 
 class Player(DecisionMaker):
 
-    UNHANDLED_RESULT = Action.INVALID  # 不能处理的情况，返回 Action.INVALID
+    # 不能处理的情况，返回 Action.INVALID
+    #------------------------------------
+    # 值得注意的是，由于 Player 仅仅被 team 判断，signal 仅用于玩家与团队间交流，因此团队在判断时，
+    # 不考虑玩家返回的信号，尽管玩家实际返回的值是 (action, signal)
+    #
+    UNHANDLED_RESULT = Action.INVALID
 
     def __init__(self, *args, **kwargs):
         if __class__ is self.__class__:
@@ -69,13 +74,20 @@ class Tank2Player(Player):
         self._tank = tank
         self._map = map
         self._battler = BattleTank(tank, map)
-        self._team = None       # Tank2Team
-        self._teammate = None   # Tank2Player
-        self._opponents = None  # [Tank2Player]
-        self._status = set()    #　当前回合的状态，可以有多个，每回合情况
-        self._labels = set()    # 对手给我做的标记，标记后长期有效
-        self._riskyEnemy = None # 缓存引起潜在风险的敌人 BattleTank
-        self._decision = None   # 缓存最终的决策
+        self._team = None          # Tank2Team
+        self._teammate = None      # Tank2Player
+        self._opponents = None     # [Tank2Player, Tank2Player]
+        self._status = set()       # 当前回合的状态，可以有多个，每回合情况
+        self._labels = set()       # 对手给我做的标记，标记后长期有效
+        self._riskyEnemy = None    # 缓存引起潜在风险的敌人 BattleTank
+        self._decision = None      # 缓存最终的决策
+        self._currentRoute = None  # 缓存这回合的攻击路线。这个属性加入较早，只缓存了 marching 逻辑下额路线
+
+        # 备忘：
+        #------------
+        # player 存在创建还原点的能力，如果在这个地方添加了新的临时变量，那么记得在创建还原点函数上
+        # 同步添加相应的功能，确保回滚后能够得到和刚才完全相同的情况
+
 
     def __eq__(self, other):
         return self.side == other.side and self.id == other.id
@@ -84,6 +96,12 @@ class Tank2Player(Player):
         return "%s(%d, %d, %d, %d)" % (
                 self.__class__.__name__, self.side, self.id,
                 self._tank.x, self._tank.y)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self): # singleton !
+        return self
 
     @property
     def side(self):
@@ -110,12 +128,49 @@ class Tank2Player(Player):
         return self._team
 
     @property
-    def teammate(self):
+    def teammate(self): # -> Tank2Player
         return self._teammate
 
     @property
-    def opponents(self):
+    def opponents(self): # -> [Tank2Player, Tank2Player]
         return self._opponents
+
+    @contextmanager
+    def create_snapshot(self):
+        """
+        创建一个还原点，然后该 player 进行决策，决策完成后回滚
+        """
+        try:
+            #
+            # 1. 对于在模拟过程中可能被修改地址指向内存的属性，需要创建一个深拷贝，例如 set, list
+            # 2. 对于在模拟过程中只可能改变引用的属性，那么此处只缓存引用
+            #    这对于采用单例模式设计的类来说是必须的
+            #
+            deepcopyVars       = ( "_status","_labels","_decision", )
+            cacheReferenceVars = ( "_currentRoute","_riskyEnemy", )
+            temporaryVars = deepcopyVars + cacheReferenceVars
+
+            snapshot = {}  # (side, id) -> attributes
+
+            # 由于决策时可能还会更改敌人的状态，所以实际上是给所有人创建快照
+            for _key, player in self.__class__._instances.items():
+                cache = snapshot[_key] = {}
+                for attr, value in player.__dict__.items():
+                    if attr in deepcopyVars:
+                        cache[attr] = deepcopy(value)
+                    elif attr in cacheReferenceVars:
+                        cache[attr] = value
+
+            yield
+
+        except Exception as e:
+            raise e
+        finally:
+            # 结束后利用快照还原
+            for _key, player in self.__class__._instances.items():
+                cache = snapshot[_key]
+                for attr in temporaryVars:
+                    player.__dict__[attr] = cache[attr]
 
 
     def set_team(self, team):
@@ -141,6 +196,12 @@ class Tank2Player(Player):
 
     def change_current_decision(self, action): # 团队用来修改队员当前决策的缓存
         self._decision = action
+
+    def get_current_attacking_route(self):
+        return self._currentRoute
+
+    def set_current_attacking_route(self, route):
+        self._currentRoute = route
 
     def get_status(self):
         return self._status
@@ -197,12 +258,14 @@ class Tank2Player(Player):
         return self._team.has_status_in_previous_turns(player, status, turns=turns)
 
     def get_previous_action(self, back=1, player=None):
-        """
-        同上
-        """
         if player is None:
             player = self
         return self._team.get_previous_action(player, back)
+
+    def get_previous_attacking_route(self, player=None):
+        if player is None:
+            player = self
+        return self._team.get_previous_attcking_route(self)
 
     def get_risky_enemy_battler(self):
         """
@@ -210,7 +273,7 @@ class Tank2Player(Player):
         """
         return self._riskyEnemy # -> BattleTank
 
-    def is_safe_action(self, action):
+    def _is_safe_action(self, action):
         """
         评估该这个决策是否安全
 
@@ -323,7 +386,7 @@ class Tank2Player(Player):
             return False # 不能移动，当然不安全 ...
 
 
-    def is_safe_to_break_overlap_by_movement(self, action, oppBattler):
+    def is_safe_to_break_overlap_by_move(self, action, oppBattler):
         """
         在不考虑和自己重叠的敌人的情况下，判断采用移动的方法打破重叠是否安全
         此时将敌人视为不会攻击，然后考虑另一个敌人的攻击
@@ -406,7 +469,7 @@ class Tank2Player(Player):
         """
         if not Action.is_valid(action):
             return instead
-        elif not self.is_safe_action(action):
+        elif not self._is_safe_action(action):
             return instead
         else:
             return action
@@ -467,6 +530,7 @@ class Tank2Player(Player):
                     OverlappingDecision(self, signal),
                     BaseDefenseDecision(self, signal),
                     BehindBrickDecision(self, signal),
+                    FollowEnemyBehindBrickDecision(self, signal),
                     ActiveDefenseDecision(self, signal),
                     MarchingDecision(self, signal),
 

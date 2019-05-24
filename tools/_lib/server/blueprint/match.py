@@ -2,26 +2,26 @@
 # @Author: Administrator
 # @Date:   2019-05-23 16:26:17
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 16:49:21
+# @Last Modified time: 2019-05-23 19:48:16
 
 import os
 import math
 from flask import Blueprint, render_template, jsonify, request, abort
+from ..const import MATCHES_PER_PAGE
 from ...scheduler.const import GLOBAL_MATCHES_DATA_DIR, RANK_MATCHES_DATA_DIR,\
-                                CONTEST_MATCHES_DATA_DIR
-from ...server.const import STATIC_DIR, TEMPLATES_DIR, MATCHES_PER_PAGE
-from ...server.config import AppConfig
+    CONTEST_MATCHES_DATA_DIR, FAVORITE_MATCHES_DATA_DIR
+from ...client.botzone import BotzoneClient
 from ...utils import json_load
 
 
 bpMatch = Blueprint("match", __name__, url_prefix="/matches")
-
 
 _MATCHES_DIR_MAP = {
 
     "rank": RANK_MATCHES_DATA_DIR,
     "global": GLOBAL_MATCHES_DATA_DIR,
     "contest": CONTEST_MATCHES_DATA_DIR,
+    "favorite": FAVORITE_MATCHES_DATA_DIR,
 
     }
 
@@ -58,6 +58,10 @@ def global_matches_list():
 def contest_matches_list():
     return _render_matches(CONTEST_MATCHES_DATA_DIR, "contest_matches.html")
 
+@bpMatch.route("/favorite")
+def favorite_matches_list():
+    return _render_matches(FAVORITE_MATCHES_DATA_DIR, "favorite_matches.html")
+
 
 @bpMatch.route("/<matchType>/<matchID>", methods=["DELETE"])
 def api_match(matchType, matchID):
@@ -71,10 +75,20 @@ def api_match(matchType, matchID):
         file = os.path.join( _DIR, "%s.json" % matchID )
         if not os.path.exists(file):
             return jsonify({
-                "errcode": 1,
+                "errcode": -1,
                 "errmsg": "Match %s is not Found" % matchID,
                 })
         else:
+            if matchType == "favorite":
+                try:
+                    _client = BotzoneClient()
+                    r = _client.remove_fovorite_match(matchID)
+                except Exception as e:
+                    return jsonify({
+                        "errcode": -1,
+                        "errmsg": repr(e),
+                        })
+
             os.remove(file)
             return jsonify({
                 "errcode": 0,

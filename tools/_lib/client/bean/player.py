@@ -2,12 +2,14 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-05 17:02:55
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 15:59:03
+# @Last Modified time: 2019-05-23 18:59:29
 
 __all__ = [
 
     "RankBotPlayerBean",
     "GroupContestParticipantBean",
+    "FavoriteMatchBotPlayerBean",
+    "FavoriteMatchBrowserPlayerBean",
     "GlobalMatchPlayerBean",
     "GroupContestBotPlayerBean",
 
@@ -16,10 +18,34 @@ __all__ = [
 import re
 from ...utils import CachedProperty
 
+
 _regexBotIDFromFavorite = re.compile(r'AddFavoriteBot\(this,\s*\'(\S+?)\',\s*(?:\d+)\)')
 
 
-class RankBotPlayerBean(object):
+class AbstractPlayerBean(object):
+
+    def __init__(self, *args, **kwargs):
+        if __class__ is self.__class__:
+            raise NotImplementedError
+
+    @property
+    def isBot(self):
+        raise NotImplementedError
+
+    def _raise_if_not_a_bot(self):
+        if not self.isBot:
+            raise Exception("I'm not a bot player")
+
+    @property
+    def userName(self):
+        raise NotImplementedError
+
+    @property
+    def userID(self):
+        raise NotImplementedError
+
+
+class RankBotPlayerBean(AbstractPlayerBean):
 
     def __init__(self, json):
         self._json = json
@@ -48,6 +74,10 @@ class RankBotPlayerBean(object):
     def botID(self):
         return self._json["bot"]["bot"]["_id"]
 
+    @property
+    def isBot(self):
+        return True
+
     def __repr__(self):
         return "BotPlayer(%s, %s)" % (
                 self.botName, self.userName)
@@ -56,32 +86,40 @@ class GroupContestParticipantBean(RankBotPlayerBean):
     pass
 
 
-'''
-{
-    "_id": "5cce9c5da51e681f0e8e2923",
-    "type": "bot",
-    "bot":
-    {
-        "_id": "5cce9391a51e681f0e8e22d6",
-        "ver": 8,
-        "bot":
-        {
-            "score": 1210.7367088328535,
-            "opensource": false,
-            "ranked": true,
-            "_id": "5ccd7355a51e681f0e8d2c55",
-            "name": "Akyuu_no_Q"
-        },
-        "user":
-        {
-            "_id": "5c40639734299b1d1ec90a59",
-            "name": "tlzmybm"
-        }
-    }
-}
-'''
+class FavoriteMatchBotPlayerBean(RankBotPlayerBean):
+    pass
 
-class GlobalMatchPlayerBean(object):
+
+class FavoriteMatchBrowserPlayerBean(AbstractPlayerBean):
+
+    def __init__(self, json):
+        self._json = json
+
+    @CachedProperty
+    def id(self):
+        return self._json["_id"]
+
+    @CachedProperty
+    def type(self):
+        return self._json["type"]
+
+    @CachedProperty
+    def userName(self):
+        return self._json["user"]["name"]
+
+    @CachedProperty
+    def userID(self):
+        return self._json["user"]["_id"]
+
+    @property
+    def isBot(self):
+        return False
+
+    def __repr__(self):
+        return "BrowserPlayer(%s)" % (self.userName)
+
+
+class GlobalMatchPlayerBean(AbstractPlayerBean):
 
     def __init__(self, tree):
         self._tree = tree
@@ -121,10 +159,6 @@ class GlobalMatchPlayerBean(object):
         _version = self._tree.xpath('./a[contains(@class, "botname")]/span[@class="version"]')[0].text
         return int(_version)
 
-    def _raise_if_not_a_bot(self):
-        if not self.isBot:
-            raise Exception("I'm not a bot player")
-
     def __repr__(self):
         if not self.isBot:
             return "HumanPlayer(%s, %d)" % (
@@ -134,7 +168,7 @@ class GlobalMatchPlayerBean(object):
                     self.userName, self.score, self.botName, self.botVersion)
 
 
-class GroupContestBotPlayerBean(object):
+class GroupContestBotPlayerBean(AbstractPlayerBean):
 
     def __init__(self, tree):
         self._tree = tree
@@ -159,7 +193,7 @@ class GroupContestBotPlayerBean(object):
         return int(_score)
 
     @CachedProperty
-    def user(self):
+    def userName(self):
         return self._tree.xpath('./a[@class="username" or @class="smallusername"]')[0].text
 
     @CachedProperty
@@ -167,6 +201,10 @@ class GroupContestBotPlayerBean(object):
         _href = self._tree.xpath('./a[@class="username" or @class="smallusername"]/@href')[0]
         return _href.split("/")[-1]
 
+    @CachedProperty
+    def isBot(self):
+        return True
+
     def __repr__(self):
         return "BotPlayer(%s, %d, %s, %d)" % (
-                self.name, self.version, self.score, self.user)
+                self.name, self.version, self.score, self.userName)

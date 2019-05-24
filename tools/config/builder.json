@@ -130,6 +130,10 @@
     },
     {
         "package": "decision/single",
+        "file": "../core/decision/single/follow_enemy_behind_brick.py"
+    },
+    {
+        "package": "decision/single",
         "file": "../core/decision/single/active_defense.py"
     },
     {

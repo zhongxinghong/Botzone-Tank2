@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 16:17:51
+# @Last Modified time: 2019-05-24 04:23:46
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -62,6 +62,12 @@ class BattleTank(object):
     def __repr__(self):
         return "%s(%d, %d, %d, %d)" % (
                 self.__class__.__name__, self.x, self.y, self.side, self.id)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self): # singleton !
+        return self
 
     @property
     def field(self):
@@ -426,40 +432,6 @@ class BattleTank(object):
         return get_manhattan_distance(x1, y1, x2, y2)
 
 
-    def has_enemy_around(self):
-        """
-        周围是否存在敌军
-        """
-        tank = self._tank
-        map_ = self._map
-        x1, y1 = tank.xy
-
-        for dx, dy in get_searching_directions(x1, y1):
-            x, y = tank.xy
-            while True:
-                x += dx
-                y += dy
-                if not map_.in_map(x, y):
-                    break
-                currentFields = map_[x, y]
-                if len(currentFields) == 0: # 没有对象
-                    continue
-                elif len(currentFields) > 1: # 多辆坦克
-                    # TODO: 如何科学判定？
-                    return True
-                else: # len == 1
-                    field = currentFields[0]
-                    if isinstance(field, (EmptyField, WaterField) ):
-                        continue
-                    elif not isinstance(field, TankField): # 说明这个方向上没有敌人
-                        break
-                    elif field.side != tank.side: # 遇到了敌人，准备射击
-                        return True
-                    else: # 遇到了队友
-                        break
-        return False
-
-
     def get_enemies_around(self):
         """
         返回获得身边的 tank 可能有多架
@@ -497,12 +469,19 @@ class BattleTank(object):
                         continue
                     elif not isinstance(field, TankField): # 说明这个方向上没有敌人
                         break
-                    elif field.side != tank.side: # 遇到了敌人，准备射击
+                    elif field.side != tank.side: # 遇到了敌人
                         enemies.append(field)
                     else: # 遇到了队友
                         break
 
         return enemies
+
+
+    def has_enemy_around(self):
+        """
+        周围是否存在敌军
+        """
+        return len(self.get_enemies_around()) > 0
 
 
     def has_overlapping_enemy(self):

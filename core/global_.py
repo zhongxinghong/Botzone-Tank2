@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-27 15:29:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 05:51:32
+# @Last Modified time: 2019-05-24 01:07:16
 """
 全局导入需要的库
 
@@ -22,6 +22,7 @@ __all__ = [
     "pprint",
     "functools",
     "contextmanager",
+    "deepcopy",
 
     ]
 
@@ -39,5 +40,6 @@ from collections import deque
 from pprint import pprint
 import functools
 from contextlib import contextmanager
+from copy import deepcopy
 
 #{ END }#

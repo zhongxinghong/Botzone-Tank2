@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 01:58:58
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-14 04:35:22
+# @Last Modified time: 2019-05-23 19:14:50
 
 __all__ = [
 
@@ -49,3 +49,6 @@ class CookiesManagerMixin(object):
 
     def clear_cookies(self):
         self._session.cookies.clear()
+
+    def refresh_cookies(self):
+        self._load_cookies()

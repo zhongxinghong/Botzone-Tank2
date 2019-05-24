@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 14:03:50
+# @Last Modified time: 2019-05-24 03:10:10
 """
 游戏团队类
 --------------------------------------------
@@ -79,6 +79,7 @@ class Tank2Team(Team):
             memory = {
                 "status": [], # [ set(), set() ] 每轮的状态
                 "labels": [ set(), set() ], # [ set(), set() ] 已有的标记
+                "previousRoute": [ None, None ]  # [ Route, Route ]
                 }
         self._memory = memory
         self._player1.add_labels(*memory["labels"][0])
@@ -94,6 +95,10 @@ class Tank2Team(Team):
         memory["labels"] = [
                 self._player1.get_labels(),
                 self._player2.get_labels(),
+                ]
+        memory["previousRoute"] = [
+                self._player1.get_current_attacking_route(),
+                self._player2.get_current_attacking_route(),
                 ]
         return memory
 
@@ -158,6 +163,8 @@ class Tank2Team(Team):
         assert back >= 1, "back >= 1 is required"
         return self._previousActions[player.id][-back]
 
+    def get_previous_attcking_route(self, player):
+        return self._memory[player.id]
 
     def _make_decision(self):
         """
@@ -563,7 +570,7 @@ class Tank2Team(Team):
 
 
         action1, action2 = returnActions
-        # 如果存在玩家没有处理，那么
+        # 如果存在玩家没有处理
         if not player1.is_handled(action1):
             action1 = Action.STAY
         if not player2.is_handled(action2):

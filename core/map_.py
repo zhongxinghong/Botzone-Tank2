@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 19:16:16
+# @Last Modified time: 2019-05-24 06:45:37
 """
 地图类
 """
@@ -443,6 +443,40 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         assert nextTurn in self._performedActionsRecord, "no previously revert operation found"
         actions = self._performedActionsRecord[nextTurn]
         self.perform(*actions)
+
+    @contextmanager
+    def auto_undo_revert(self):
+        """
+        自动实现多轮回滚
+        外层函数通过调用 cnt.increase 来增加回滚次数
+        """
+        class _Counter(object):
+
+            def __init__(self):
+                self._counter = 0
+
+            def increase(self):
+                self._counter += 1
+
+            def __iter__(self):
+                return iter(range(self._counter))
+
+            def __repr__(self):
+                return self._counter.__repr__()
+
+            def __int__(self):
+                return self._counter
+
+        try:
+            cnt = _Counter()
+            yield cnt # 每成功调用一次 map_.revert 就调用一次 increase
+
+        except Exception as e:
+            raise
+        finally:
+            for _ in cnt:
+                self.undo_revert()
+
 
     def get_game_result(self):
         """

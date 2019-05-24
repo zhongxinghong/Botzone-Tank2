@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-04-30 11:25:35
-# @Last Modified by:   zhongxinghong
-# @Last Modified time: 2019-05-05 18:40:38
+# @Last Modified by:   Administrator
+# @Last Modified time: 2019-05-24 05:08:10
 """
 无 GUI 的游戏模拟器，可以模拟播放比赛记录
 
@@ -96,7 +96,8 @@ def main():
         print("End Turn %s" % turn)
 
         if PAUSE_PER_TURN:
-            subprocess.call("pause",shell=True)
+            #subprocess.call("pause",shell=True)
+            os.system('pause')
         else:
             time.sleep(TURN_INTERVAL)
 

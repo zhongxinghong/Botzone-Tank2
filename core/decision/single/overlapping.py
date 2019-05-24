@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:46:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-22 19:29:39
+# @Last Modified time: 2019-05-24 03:56:39
 
 __all__ = [
 
@@ -98,6 +98,141 @@ class OverlappingDecision(SingleDecisionMaker):
                                               Status.ATTEMPT_TO_KILL_ENEMY)
                             return action + 4
 
+            #
+            # (inserted) 观察到大多数人在遇到重叠时会选择直接无视对手，我们也可以学习一下这种决策
+            # 但是目前不想让这个决策成为必须，希望它只在特定的状况下被触发。
+            #
+            # 对于非防御模式下，考虑这样三种情况：
+            # -------------------------------------
+            # 1. 假设我方当前进攻路线距离领先一步 ，如果对方主动打破重叠，这时，如果对方下一步可以闪避，
+            #    而我方当前回合不饿能闪避，必须要还击（之所以必须要射击是因为我们考虑最坏的情况，假设
+            #    对方这回合会还击，如果我方这时候不还击就会被打掉），假如对方这回合闪避了，并且恰好沿着进攻
+            #    方向闪避，那么结束后对方将比我方领先一步，这时候即使再继续攻击，结局也很可能是输，
+            #    因此这步可以考虑主动打破重叠
+            #
+            # 2. 假设我方当前进攻路线长度与敌方相同，假设对方主动打破重叠，假设对方可以闪避并且可以向着
+            #    进攻方向闪避，那么对方很有可能比我方快一步，此时应该主动打破重叠。假如对方不能向着进攻方向
+            #    闪避，那么认为敌人一定会还击，此时考虑我方下回合是否可以向着进攻方向闪避，如果不可以的话，
+            #    我方就和对方差一步，处于劣势，那么就主动打破重叠。
+            #
+            # 3. 假设对方比我方领先一步，这种情况下多属于对方处在我方阵营，我方很可能会触发防御模式
+            #    这种情况下就直接忽略掉吧
+            #
+            route1 = battler.get_shortest_attacking_route()
+            route2 = oppBattler.get_shortest_attacking_route()
+            _shouldActiveBreakOverlap = False
+            _enemyAttackAction = Action.STAY
+            if route1.is_not_found() or route2.is_not_found(): # 虽然应该不可能，但是还是判断一下
+                pass
+            else:
+                _leadingLength = route2.length - route1.length # 我方领先步数
+                debug_print(battler, _leadingLength)
+                action = battler.get_next_attack_action(route1)
+                if Action.is_shoot(action):
+                    # TODO:
+                    #   是否有必要考虑射击行为？
+                    pass
+
+                elif _leadingLength == 1: # 情况一
+
+                    allRoutes = oppBattler.get_all_shortest_attacking_routes()
+                    #
+                    # 由于不同的路线下一步可能会走到相同的地方，而造成的结果相同
+                    # 因此此处将相同的行为进行缓存，为了减少判断次数
+                    _consideredActions = set()
+                    for route in allRoutes:
+                        _enemyAttackAction = oppBattler.get_next_attack_action(route)
+                        if _enemyAttackAction in _consideredActions:
+                            continue
+                        _consideredActions.add(_enemyAttackAction)
+
+                        if not Action.is_move(_enemyAttackAction):
+                            # 只考虑移动行为，因为，假如对方当前回合射击，那么我方下回合可以移动
+                            # 这时双方距离可以认为相等，很有可能平局
+                            continue
+
+                        # 提交地图模拟这步行为，这个时候双方应该均为僵持
+                        with map_.simulate_one_action(oppBattler, _enemyAttackAction):
+
+                            # 考虑下回合我方是否可以闪避
+                            with player.create_snapshot():
+
+                                # 确保这种情况下决策不会再运行到这里，因为此时将不再和敌人重叠，于是不会遇到递归无终点
+                                action, _ = player.make_decision(signal=signal)
+                                if action != battler.shoot_to(oppBattler):
+                                    # 说明下回合我方可以闪避，那么就可以不管了
+                                    continue
+
+                            # 我方下回合不可以闪避，考虑敌人下回合是否可以闪避
+                            with oppPlayer.create_snapshot():
+                                action, _ = oppPlayer.make_decision()
+                                if action != oppBattler.shoot_to(battler):
+                                    # 说明下回合敌人可以闪避
+                                    _shouldActiveBreakOverlap = True
+                                    break
+
+                elif _leadingLength == 0: # 情况二
+
+                    allRoutes = oppBattler.get_all_shortest_attacking_routes()
+                    _consideredActions = set()
+                    for route in allRoutes:
+
+                        _enemyAttackAction = oppBattler.get_next_attack_action(route)
+                        if _enemyAttackAction in _consideredActions:
+                            continue
+                        _consideredActions.add(_enemyAttackAction)
+
+                        if not Action.is_move(_enemyAttackAction):
+                            # TODO:
+                            #   仍然不考虑射击？为了防止无迭代终点？
+                            continue
+
+                        # 提交一步模拟，敌方应该比我方领先一步
+                        with map_.simulate_one_action(oppBattler, _enemyAttackAction):
+
+                            # 考虑下回合敌方是否可以闪避
+                            with oppPlayer.create_snapshot():
+                                action, _ = oppPlayer.make_decision()
+                                if action != oppBattler.shoot_to(battler): # 敌方可以闪避
+                                    _shouldActiveBreakOverlap = True
+                                    break
+
+                            # 对方下回合不可以闪避，那么考虑我方是否可以闪避
+                            with player.create_snapshot():
+                                action, _ = player.make_decision()
+                                # TODO:
+                                #   我方下回合可能是防御状态，这种情况下必定反击，判断不准确
+                                #
+                                #   不过问题其实不大，因为这样就会触发主动打破重叠
+                                #
+                                if action == battler.shoot_to(oppBattler): # 我方不能闪避
+                                    _shouldActiveBreakOverlap = True
+                                    break
+                else:
+                    # 其他情况，留作下一回合打破重叠
+                    pass
+
+            if _shouldActiveBreakOverlap:
+                action = battler.get_next_attack_action(route1)
+                if Action.is_move(action):
+                    if player.is_safe_to_break_overlap_by_move(action, oppBattler):
+                        player.set_status(Status.READY_TO_BREAK_OVERLAP)
+                        player.set_status(Status.KEEP_ON_MARCHING)
+                        return action
+                elif Action.is_shoot(action):
+                    #
+                    # 假设下一步射击，考虑最糟糕的一种情况，那就是敌人同一回合主动打破重叠，移动到我方身后
+                    # 而我方无法闪避，那么就有被敌人击杀的风险
+                    #
+                    _mayBeKilled = False
+                    with map_.simulate_one_action(oppBattler, _enemyAttackAction):
+                        with map_.simulate_one_action(battler, action):
+                            if len(battler.try_dodge(oppBattler)) == 0: # 无法闪避！
+                                _mayBeKilled = True
+
+                    if not _mayBeKilled: # 在没有被击杀风险的情况下可以采用射击
+                        return action
+
 
             # 是否已经有多回合僵持，应该主动打破重叠
             _shouldBreakOverlap = (
@@ -182,7 +317,7 @@ class OverlappingDecision(SingleDecisionMaker):
                                     return Action.STAY
 
 
-                            if player.is_safe_to_break_overlap_by_movement(realAction, oppBattler):
+                            if player.is_safe_to_break_overlap_by_move(realAction, oppBattler):
                                 player.set_status(Status.READY_TO_BREAK_OVERLAP)
                                 player.set_status(Status.KEEP_ON_MARCHING)
                                 return realAction
@@ -253,7 +388,7 @@ class OverlappingDecision(SingleDecisionMaker):
 
                             # 正常情况下选择堵路
                             #----------------------
-                            if player.is_safe_to_break_overlap_by_movement(oppAction, oppBattler): # 模仿敌人的移动方向
+                            if player.is_safe_to_break_overlap_by_move(oppAction, oppBattler): # 模仿敌人的移动方向
                                 player.set_status(Status.READY_TO_BREAK_OVERLAP)
                                 player.set_status(Status.READY_TO_BLOCK_ROAD) # 认为在堵路
                                 return oppAction

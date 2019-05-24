@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-05 14:56:48
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 15:59:42
+# @Last Modified time: 2019-05-23 18:14:29
 
 import sys
 sys.path.append("../")
@@ -163,3 +163,5 @@ contest = GroupContestBean(contentDetailJSON, game)
 print(contest)
 print(contest.players[0])
 pprint(contest.matches[0].dict)
+
+r = client.get_favorites()

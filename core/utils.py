@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-09 16:04:14
+# @Last Modified time: 2019-05-24 04:32:06
 """
 工具类
 """
@@ -47,9 +47,6 @@ else:
     simulator_pprint = _null_func
 
 
-class _GotoOuterException(Exception):
-    pass
-
 @contextmanager
 def outer_label():
     """
@@ -58,30 +55,31 @@ def outer_label():
     如果置于循环体之外，就是 break outer
     如果置于循环体之内，就是 continue outer
     """
-    try:
-        yield _GotoOuterException
-    except _GotoOuterException:
+    class _GotoOuterException(Exception):
         pass
-
-
-class _Missing(object):
-    """
-    from werkzeug._internal
-    """
-
-    def __repr__(self):
-        return 'no value'
-
-    def __reduce__(self):
-        return '_missing'
-
-_MISSING = _Missing()
+    try:
+        yield _GotoOuterException() # 每次创建后都不相同，嵌套的情况下，需要确保名称不相同
+    except _GotoOuterException:     #　这样做是为了防止嵌套的情况下，无法从内层直接跳到最外层
+        pass
 
 
 class CachedProperty(property):
     """
     from werkzeug.utils
     """
+    class _Missing(object):
+        """
+        from werkzeug._internal
+        """
+        def __repr__(self):
+            return 'no value'
+
+        def __reduce__(self):
+            return '_missing'
+
+
+    _MISSING = _Missing()
+
 
     def __init__(self, func, name=None, doc=None):
         self.__name__ = name or func.__name__
@@ -95,8 +93,8 @@ class CachedProperty(property):
     def __get__(self, obj, type=None):
         if obj is None:
             return self
-        value = obj.__dict__.get(self.__name__, _MISSING)
-        if value is _MISSING:
+        value = obj.__dict__.get(self.__name__, __class__._MISSING)
+        if value is __class__._MISSING:
             value = self.func(obj)
             obj.__dict__[self.__name__] = value
         return value
@@ -118,7 +116,7 @@ class SingletonMeta(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instance:
-            cls._instance[cls] = super(SingletonMeta, cls).__call__(*args)
+            cls._instance[cls] = super(SingletonMeta, cls).__call__(*args, **kwargs)
         return cls._instance[cls]
 
 

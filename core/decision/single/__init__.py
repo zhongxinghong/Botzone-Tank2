@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:15:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 09:14:44
+# @Last Modified time: 2019-05-23 23:04:31
 
 __all__ = [
 
@@ -12,6 +12,7 @@ __all__ = [
     "OverlappingDecision",
     "BaseDefenseDecision",
     "BehindBrickDecision",
+    "FollowEnemyBehindBrickDecision",
     "ActiveDefenseDecision",
     "MarchingDecision",
 
@@ -23,5 +24,6 @@ from .encount_enemy import EncountEnemyDecision
 from .overlapping import OverlappingDecision
 from .base_defense import BaseDefenseDecision
 from .behind_brick import BehindBrickDecision
+from .follow_enemy_behind_brick import FollowEnemyBehindBrickDecision
 from .active_defense import ActiveDefenseDecision
 from .marching import MarchingDecision

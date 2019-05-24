@@ -1,0 +1,15 @@
+{% from "_matches.html" import render_matches_table, render_submitDeleteRecord %}
+{% extends "base.html" %}
+
+{% set TITLE = "Favorite Matches" %}
+
+
+{% block title %}{{ TITLE }}{% endblock title %}
+
+{% block body %}
+{{ render_matches_table(TITLE, matches, current_page, total_page) }}
+{% endblock body %}
+
+{% block script %}
+{{ render_submitDeleteRecord() }}
+{% endblock script %}

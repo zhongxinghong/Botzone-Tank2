@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 11:24:16
+# @Last Modified time: 2019-05-24 00:41:07
 """
 状况评估
 """
@@ -39,6 +39,9 @@ def evaluate_aggressive(battler, oppBattler):
         - Status.DEFENSIVE    我方处于防御状态
         - Status.STALEMENT    双方处于僵持状态
     """
+    map_ = battler._map
+    BattleTank = type(battler)
+
     myRoute = battler.get_shortest_attacking_route()
     oppRoute = oppBattler.get_shortest_attacking_route()
 
@@ -56,20 +59,45 @@ def evaluate_aggressive(battler, oppBattler):
     if battler.is_in_enemy_site(): # 在敌方半边地图，更倾向于不防御
 
         if leadingLength >= 1:
-            return Status.AGGRESSIVE
+            status = Status.AGGRESSIVE
         elif leadingLength < -2:
-            return Status.DEFENSIVE
+            status = Status.DEFENSIVE
         else:
-            return Status.STALEMENT
+            status = Status.STALEMENT
 
     else: # 在我方半边地盘，会增加防御的可能性
 
         if leadingLength >= 1:
-            return Status.AGGRESSIVE
+            status = Status.AGGRESSIVE
         elif leadingLength <= -1:
-            return Status.DEFENSIVE
+            status = Status.DEFENSIVE
         else:
-            return Status.STALEMENT
+            status = Status.STALEMENT
+
+
+    #
+    # 尽可能用攻击性策略！
+    #
+    # 还要判断对方的攻击路线是否可能会被我方队员阻拦
+    # 否则就过度防御了 5ce69a15d2337e01c7a90646
+    #
+    if status != Status.AGGRESSIVE:
+        map_ = battler._map
+        tank = battler.tank
+        teammate = None
+        for _tank in map_.tanks[tank.side]:
+            if _tank is not tank:
+                teammate = _tank
+                break
+
+        if not teammate.destroyed:
+            teammateBattler = BattleTank(teammate)
+            for action in teammateBattler.get_all_valid_move_action() + [ Action.STAY ]:
+                with map_.simulate_one_action(teammateBattler, action):
+                    if teammateBattler.xy in oppRoute:  # 此时视为侵略模式
+                        return Status.AGGRESSIVE
+
+    return status
 
 
 def estimate_route_similarity(route1, route2):
