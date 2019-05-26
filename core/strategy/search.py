@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 05:52:12
+# @Last Modified time: 2019-05-26 17:12:14
 """
 BFS 搜索最短路径的工具库
 
@@ -163,11 +163,9 @@ def _BFS_search_all_routes_for_move(start, end, map_matrix_T, weight_matrix_T,
     for _type in block_types:
         matrixCanMoveTo &= (matrixMap != _type)
 
-    '''
-    debug_print("map:\n", matrixMap.T)
-    debug_print("weight:\n", matrixWeight.T)
-    debug_print("can move on:\n", matrixCanMoveTo.astype(np.int8).T)
-    '''
+    # debug_print("map:\n", matrixMap.T)
+    # debug_print("weight:\n", matrixWeight.T)
+    # debug_print("can move on:\n", matrixCanMoveTo.astype(np.int8).T)
 
     startNode = [
         (x1, y1),
@@ -177,7 +175,7 @@ def _BFS_search_all_routes_for_move(start, end, map_matrix_T, weight_matrix_T,
         NONE_ACTION,
         ]
 
-    queue  = deque() # queue( [Node] )
+    queue = deque() # queue( [Node] )
     matrixMarked = np.zeros_like(matrixMap, dtype=np.bool8)
 
     if DEBUG_MODE:
@@ -328,17 +326,20 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
                 break
             elif matrixMap[x, y] == Field.EMPTY: # 空对象
                 pass
-            elif not matrixCanBeDestroyed[x, y]:
-                break
+            elif matrixMap[x, y] == Field.WATER:
+                continue # 水路不可以发动射击，但是可以射过去
+            elif not matrixCanBeDestroyed[x, y] and (x, y) != start:
+                break # 打一个补丁，不管怎么样，攻击者原地是可以发动射击的 ...
             matrixCanShoot[x, y] = True
+            if (x, y) == start: # 已经找到了 start 没有必要再继续找下去了
+                break
 
-
-    #debug_print("map:\n", matrixMap.T)
-    #debug_print("weight of move:\n", matrixMoveWeight.T)
-    #debug_print("weight of shoot:\n", matrixShootWeight.T)
-    #debug_print("can move to:\n", matrixCanMoveTo.astype(np.int8).T)
-    #debug_print("can shoot:\n", matrixCanShoot.astype(np.int8).T)
-    #debug_print("can be destroyed:\n", matrixCanBeDestroyed.astype(np.int8).T)
+    # debug_print("map:\n", matrixMap.T)
+    # debug_print("weight of move:\n", matrixMoveWeight.T)
+    # debug_print("weight of shoot:\n", matrixShootWeight.T)
+    # debug_print("can move to:\n", matrixCanMoveTo.astype(np.int8).T)
+    # debug_print("can shoot:\n", matrixCanShoot.astype(np.int8).T)
+    # debug_print("can be destroyed:\n", matrixCanBeDestroyed.astype(np.int8).T)
 
 
     startNode = [
@@ -349,7 +350,7 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         NONE_ACTION, # 对于 start == end 的情况，将返回 startNode，相当于原地等待
         ]
 
-    queue  = deque() # queue( [Node] )
+    queue = deque() # queue( [Node] )
     matrixMarked  = np.zeros_like(matrixMap, dtype=np.bool8) # 标记移动到的位置
 
     if DEBUG_MODE:
@@ -360,6 +361,10 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
     _foundRoute = False
 
     while len(queue) > 0:
+
+        # if start == (8, 1):
+        #     debug_print(start)
+        #     debug_print([n[0] for n in queue])
 
         node = queue.popleft()
 
@@ -375,7 +380,13 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
             yield Route(node)
             continue
 
-        if matrixCanShoot[x, y]: # 如果当前处在射击区域
+        # 1. 如果当前处在射击区域
+        # 2. 或者上回合射击（事实上射击行为必定是可延续的，也就是上回合 canShoot 这回合
+        # 必定应该继续 canShoot ，但是对于 WaterField 来说，不属于可以发动射击的区域
+        # 因此，如果上回合射进 WaterField 那么上一个判定条件就会失效。但在这种情况下
+        # 应该视为射击行为延续，因此需要第二个判定条件）
+        #
+        if matrixCanShoot[x, y] or node[4] == SHOOT_ACTION:
 
             # 因为在射击区域中，行为的方向都是单向的，不会出现从射击区域进入移动区域，
             # 或者从射击的下一步移动回到上一步的情况，

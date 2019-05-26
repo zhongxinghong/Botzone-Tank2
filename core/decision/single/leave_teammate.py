@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-20 07:21:31
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-20 07:58:04
+# @Last Modified time: 2019-05-26 01:36:58
 
 __all__ = [
 
@@ -39,7 +39,7 @@ class LeaveTeammateDecision(SingleDecisionMaker):
         if signal == Signal.SHOULD_LEAVE_TEAMMATE:
 
             actions = []
-            for action in battler.get_all_valid_move_action():
+            for action in battler.get_all_valid_move_actions():
                 if not Action.is_move(player.try_make_decision(action)): # 存在风险
                     continue
                 if action == teammate.get_current_decision(): # 不能与队友的移动方向相同！

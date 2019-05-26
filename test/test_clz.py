@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-15 02:51:38
+# @Last Modified time: 2019-05-26 08:25:58
 
 from typing import Iterable
 from contextlib import contextmanager
@@ -199,3 +199,26 @@ b = Second()
 c = a.get_second()
 d = b.get_first()
 print("ok")
+
+
+@contextmanager
+def aa():
+    try:
+        yield
+    except Exception as e:
+        print(e)
+        raise e
+    finally:
+        print("ok")
+
+
+def fn():
+
+    with aa():
+        return True
+
+a = [1,2,3,4]
+
+a.sort(key=lambda item: fn(), reverse=True)
+
+print(a)

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:32:08
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 17:36:07
+# @Last Modified time: 2019-05-26 01:36:59
 
 __all__ = [
 
@@ -55,13 +55,13 @@ class BaseDefenseDecision(SingleDecisionMaker):
             #
             if oppBattler.is_face_to_enemy_base():
                 if oppBattler.canShoot: # 敌方可以射击
-                    for action in battler.get_all_valid_move_action():
+                    for action in battler.get_all_valid_move_actions():
                         with map_.simulate_one_action(battler, action):
                             if not oppBattler.is_face_to_enemy_base(): # 此时不再面向我方基地，为正确路线
                                 player.set_status(Status.SACRIFICE_FOR_OUR_BASE)
                                 return action
                 else: # 敌方不可射击
-                    for action in battler.get_all_valid_move_action(): # 敌方不能射击，我方尝试移动两步
+                    for action in battler.get_all_valid_move_actions(): # 敌方不能射击，我方尝试移动两步
                         with map_.simulate_one_action(battler, action):
                             if not oppBattler.is_face_to_enemy_base(): # 一步防御成功
                                 player.set_status(Status.BLOCK_ROAD_FOR_OUR_BASE)
@@ -76,10 +76,10 @@ class BaseDefenseDecision(SingleDecisionMaker):
                 #
                 # 敌人下一回合可能面向基地
                 #
-                for enemyAction in oppBattler.get_all_valid_move_action():
+                for enemyAction in oppBattler.get_all_valid_move_actions():
                     with map_.simulate_one_action(oppBattler, enemyAction):
                         if oppBattler.is_face_to_enemy_base(): # 敌人移动一步后面向我方基地
-                            for action in battler.get_all_valid_move_action():
+                            for action in battler.get_all_valid_move_actions():
                                 with map_.simulate_one_action(battler, action):
                                     if not oppBattler.is_face_to_enemy_base(): # 我方优先移动可以阻止
                                         player.set_status(Status.BLOCK_ROAD_FOR_OUR_BASE)

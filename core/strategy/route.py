@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-08 23:18:15
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 10:46:28
+# @Last Modified time: 2019-05-26 03:09:54
 
 __all__ = [
 
@@ -57,25 +57,31 @@ class RouteNode(object):
         self._weight = weight
         self._arrivalAction = arrival_action
 
-    @CachedProperty
+    @property
     def x(self):
         return self._x
 
-    @CachedProperty
+    @property
     def y(self):
         return self._y
 
-    @CachedProperty
+    @property
     def xy(self):
         return (self._x, self._y)
 
-    @CachedProperty
+    @property
     def weight(self):
         return self._weight
 
-    @CachedProperty
+    @property
     def arrivalAction(self):
         return self._arrivalAction
+
+    def from_shooting_area(self):
+        return self._arrivalAction == SHOOT_ACTION
+
+    def from_moving_area(self):
+        return self._arrivalAction == MOVE_ACTION
 
     def __repr__(self):
         return str( (self._x, self._y, self._weight, self._arrivalAction) )
@@ -167,7 +173,7 @@ class Route(object):
             return INFINITY_ROUTE_LENGTH
         return np.sum( node.weight for node in self.nodes )
 
-    @CachedProperty
+    @property
     def start(self):
         """
         路径起点
@@ -177,7 +183,7 @@ class Route(object):
             return NONE_POINT
         return self.nodes[0].xy
 
-    @CachedProperty
+    @property
     def end(self):
         """
         路径终点

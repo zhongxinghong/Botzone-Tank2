@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-20 09:12:48
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 14:33:07
+# @Last Modified time: 2019-05-26 18:52:04
 
 __all__ = [
 
@@ -11,6 +11,7 @@ __all__ = [
     ]
 
 from ..abstract import RespondTeamSignalDecisionMaker
+from ...utils import debug_print
 from ...action import Action
 from ...strategy.status import Status
 from ...strategy.signal import Signal
@@ -20,10 +21,10 @@ from ...strategy.signal import Signal
 class BehindBrickDecision(RespondTeamSignalDecisionMaker):
     """
     适用于在墙后和敌人僵持时的情况
-    响应团队信号 PREPARE_FOR_BREAK_BRICK
 
     """
-    HANDLED_SIGNALS = ( Signal.PREPARE_FOR_BREAK_BRICK, )
+    HANDLED_SIGNALS = ( Signal.PREPARE_FOR_BREAK_BRICK,
+                        Signal.READY_TO_BACK_AWAY_FROM_BRICK, )
 
     def _make_decision(self):
 
@@ -34,7 +35,7 @@ class BehindBrickDecision(RespondTeamSignalDecisionMaker):
 
         BattleTank = type(battler)
 
-        # (inserted) 准备破墙信号
+        # 准备破墙信号
         #--------------------------
         # 触发条件：
         #
@@ -70,7 +71,7 @@ class BehindBrickDecision(RespondTeamSignalDecisionMaker):
 
                 player.set_status(Status.WAIT_FOR_MARCHING)      # 用于下回合触发
                 player.set_status(Status.HAS_ENEMY_BEHIND_BRICK) # 用于下回合触发
-                player.set_risky_enemy(BattleTank(oppTank)) # 重新设置这个敌人！
+                player.set_risky_enemy(oppTank) # 重新设置这个敌人！
 
                 dodgeActions = battler.try_dodge(oppTank)
                 if len(dodgeActions) == 0:
@@ -91,5 +92,32 @@ class BehindBrickDecision(RespondTeamSignalDecisionMaker):
                     map_.undo_revert()'''
 
             return res  # 必定回复一个信号
+
+        #
+        # 准备回退以制造二打一的局面
+        #
+        if signal == Signal.SUGGEST_TO_BACK_AWAY_FROM_BRICK:
+
+            attackAction = battler.get_next_attacking_action() # 只考虑攻击路径上的敌人
+            oppTank = battler.get_enemy_behind_brick(attackAction, interval=-1)
+
+            if oppTank is None: # ??
+                res = ( Action.INVALID, Signal.UNHANDLED )
+            else:
+
+                player.set_status(Status.HAS_ENEMY_BEHIND_BRICK)
+
+                action = battler.back_away_from(oppTank)
+                realAction = player.try_make_decision(action)
+
+                if Action.is_move(realAction):
+                    player.set_status(Status.READY_TO_BACK_AWAY_FROM_BRICK)
+                    res = ( realAction, Signal.READY_TO_BACK_AWAY_FROM_BRICK )
+
+                else: # 存在风险，也就是想要夹击的敌人有炮弹，那么就先等待一回合
+                    res = ( Action.STAY, Signal.CANHANDLED )
+
+            return res  # 必定回复一个信号
+
 
 #{ END }#

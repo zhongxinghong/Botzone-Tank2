@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 22:14:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-21 21:13:30
+# @Last Modified time: 2019-05-26 18:34:31
 """
 消息与信号
 
@@ -44,6 +44,9 @@ class Signal(object, metaclass=UniqueIntEnumMeta):
 
     SHOULD_LEAVE_TEAMMATE            = 19  # 团队信号，需要和队友打破重叠
     READY_TO_LEAVE_TEAMMATE          = 20  # 队员信号，准备和队友打破重叠
+
+    SUGGEST_TO_BACK_AWAY_FROM_BRICK  = 21  # 团队信号，建议反向远离墙壁
+    READY_TO_BACK_AWAY_FROM_BRICK    = 22  # 队员信号，准备反向远离墙壁
 
 
     @staticmethod

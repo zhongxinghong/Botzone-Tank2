@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-23 22:59:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 09:32:44
+# @Last Modified time: 2019-05-26 05:51:52
 
 __all__ = [
 
@@ -13,6 +13,7 @@ __all__ = [
 from ..abstract import SingleDecisionMaker
 from ...global_ import np
 from ...action import Action
+from ...field import BrickField
 from ...strategy.status import Status
 
 #{ BEGIN }#
@@ -59,8 +60,13 @@ class FollowEnemyBehindBrickDecision(SingleDecisionMaker):
             if previousAction in dodgeActions: # 敌人上回合从墙后闪开
                 realAction = player.try_make_decision(previousAction) # 尝试跟随敌人上回合的移动行为
                 if Action.is_move(realAction):
-                    player.set_status(Status.READY_TO_FOLLOW_ENEMY)
-                    return realAction
+                    with map_.simulate_one_action(battler, realAction):
+                        for field in battler.get_destroyed_fields_if_shoot(action):
+                            if isinstance(field, BrickField):
+                                # 确保跟随后还隔着墙 5ce90a90d2337e01c7abcd07
+                                # 否则何必要跟随 ...
+                                player.set_status(Status.READY_TO_FOLLOW_ENEMY)
+                                return realAction
 
 
         #
@@ -87,8 +93,11 @@ class FollowEnemyBehindBrickDecision(SingleDecisionMaker):
                 if np.abs(previousAction % 4 - lastAction % 4) in (0, 2): # 两次移动方向或相反
                     realAction = player.try_make_decision(previousAction) # 尝试跟随敌人上回合行为
                     if Action.is_move(realAction):
-                        player.set_status(Status.READY_TO_FOLLOW_ENEMY)
-                        return realAction
+                        with map_.simulate_one_action(battler, realAction):
+                            for field in battler.get_destroyed_fields_if_shoot(action):
+                                if isinstance(field, BrickField):
+                                    player.set_status(Status.READY_TO_FOLLOW_ENEMY)
+                                    return realAction
 
 
 #{ END }#

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 01:01:30
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 03:10:10
+# @Last Modified time: 2019-05-26 18:49:46
 """
 游戏团队类
 --------------------------------------------
@@ -281,14 +281,14 @@ class Tank2Team(Team):
                     ):
                     shouldForcedMarch = False
 
-                    playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                    playerRiskyEnemyBattler = player.get_risky_enemy()
                     if playerRiskyEnemyBattler is None: # 说明是因为没有弹药？
                         continue
                     oppPlayer = Tank2Player(playerRiskyEnemyBattler)
                     teammate = player.teammate # 考虑队友和敌军的情况
 
-                    #debug_print(player.get_risky_enemy_battler())
-                    #debug_print(teammate.get_risky_enemy_battler())
+                    #debug_print(player.get_risky_enemy())
+                    #debug_print(teammate.get_risky_enemy())
 
                     # 敌人正在和队友交火
                     #------------------
@@ -296,7 +296,7 @@ class Tank2Team(Team):
                     #
                     if (oppPlayer.has_status(Status.ENCOUNT_ENEMY)
                         and oppPlayer.has_status(Status.READY_TO_FIGHT_BACK)
-                        and oppPlayer.get_risky_enemy_battler() is teammate.battler
+                        and oppPlayer.get_risky_enemy() is teammate.battler
                         ): # 说明对方正准备和队友交火
                         shouldForcedMarch = True
 
@@ -309,7 +309,7 @@ class Tank2Team(Team):
                     #
                     elif (oppPlayer.has_status(Status.HAS_ENEMY_BEHIND_BRICK) # 僵持超过一回合
                         and self.has_status_in_previous_turns(oppPlayer, Status.HAS_ENEMY_BEHIND_BRICK, turns=1)
-                        and oppPlayer.get_risky_enemy_battler() is teammate.battler
+                        and oppPlayer.get_risky_enemy() is teammate.battler
                         and self.has_status_in_previous_turns(player, Status.WAIT_FOR_MARCHING, turns=1) # 已经等待了一回合
                         and self.has_status_in_previous_turns(player, Status.PREVENT_BEING_KILLED, turns=1)
                         ):
@@ -390,7 +390,7 @@ class Tank2Team(Team):
                 # elif signal3 == Signal.READY_TO_BREAK_BRICK:
                 # 否则将受到破墙信号，开始判断是否符合破墙条件
 
-                oppBattler = player.get_risky_enemy_battler() # 获得墙后敌人
+                oppBattler = player.get_risky_enemy() # 获得墙后敌人
                 oppPlayer = Tank2Player(oppBattler)
                 if oppPlayer.has_status(Status.ENCOUNT_ENEMY): # 发现敌人和队友相遇，立即破墙
                     returnActions[idx] = action3
@@ -414,8 +414,8 @@ class Tank2Team(Team):
                     # and self.has_status_in_previous_turns(teammate, Status.WAIT_FOR_MARCHING, turns=1)
                     and teammate.has_status(Status.PREVENT_BEING_KILLED)   # 队友是为了防止被杀
                     ):
-                    teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
-                    playerRiskyEnemyBattler = player.get_risky_enemy_battler() # 墙后敌人
+                    teammateRiskyEnemyBattler = teammate.get_risky_enemy()
+                    playerRiskyEnemyBattler = player.get_risky_enemy() # 墙后敌人
                     if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
                         # 两者受到同一个敌人牵制，那么发动破墙信号
                         shouldBreakBrick = True
@@ -434,8 +434,8 @@ class Tank2Team(Team):
                             if (teammate.has_status(Status.WAIT_FOR_MARCHING)
                                 and teammate.has_status(Status.PREVENT_BEING_KILLED)
                                 ): # 这个时候队友被阻拦
-                                teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
-                                playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                                teammateRiskyEnemyBattler = teammate.get_risky_enemy()
+                                playerRiskyEnemyBattler = player.get_risky_enemy()
                                 if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
                                     shouldBreakBrick = True # 如果是因为对面墙的坦克在阻拦，那么马上破墙'''
 
@@ -452,14 +452,63 @@ class Tank2Team(Team):
                     and teammate.has_status(Status.ENCOUNT_ENEMY)
                     and teammate.has_status(Status.READY_TO_FIGHT_BACK)
                     ):
-                    teammateRiskyEnemyBattler = teammate.get_risky_enemy_battler()
-                    playerRiskyEnemyBattler = player.get_risky_enemy_battler()
+                    teammateRiskyEnemyBattler = teammate.get_risky_enemy()
+                    playerRiskyEnemyBattler = player.get_risky_enemy()
                     if teammateRiskyEnemyBattler is playerRiskyEnemyBattler:
                         shouldBreakBrick = True
 
                 if shouldBreakBrick:
                     returnActions[playerIdx] = action3
                     hasTeamActions[playerIdx] = True
+
+
+        #
+        # 考虑一种墙后后退的逻辑 5cea650cd2337e01c7ad8de4
+        # 这样可以制造二打一的局面
+        #
+        # TODO:
+        #   回退后可能会造成 WITHDRAW 的情况出现 ?
+        #
+        for idx, (player, action) in enumerate(zip(self.players, returnActions)):
+            if hasTeamActions[idx]:
+                continue
+            teammate = player.teammate
+            teammateBattler = teammate.battler
+            if (player.has_status(Status.HAS_ENEMY_BEHIND_BRICK)
+                and teammate.has_status(Status.WITHDRAW)
+                and teammate.has_status(Status.ENCOUNT_ENEMY)
+                and (teammate.has_status(Status.READY_TO_FIGHT_BACK)
+                    or teammate.has_status_in_previous_turns(Status.READY_TO_FIGHT_BACK, turns=1)
+                    ) # 保持对射行为，
+                      # TODO:
+                      #   或许可以考虑用 对射状态描述撤退状态下的对射？
+                ):
+                battler = player.battler
+                oppBattler = player.get_risky_enemy()
+                oppPlayer = Tank2Player(oppBattler)
+                teammateRiskyEnemyTank = oppPlayer.teammate.tank # 当前和我墙后僵持的敌人的队友
+                if oppBattler is not None and teammateRiskyEnemyTank is not None: # 应该不会这样？
+                    backAwayAction = battler.back_away_from(oppBattler)
+                    _shouldBackAway = False
+                    with map_.auto_revert() as counter:
+                        while map_.is_valid_move_action(battler, backAwayAction):
+                            map_.simulate(battler, backAwayAction)
+                            counter.increase()
+                            if teammateRiskyEnemyTank in battler.get_enemies_around():
+                                _shouldBackAway = True
+                                break
+
+                    if _shouldBackAway:
+
+                        action3, signal3 = player.make_decision(Signal.SUGGEST_TO_BACK_AWAY_FROM_BRICK)
+                        if Signal.is_break(signal3):
+                            continue
+
+                        if signal3 == Signal.READY_TO_BACK_AWAY_FROM_BRICK:
+                            returnActions[idx] = action3
+                            hasTeamActions[idx] = True
+                            continue
+
 
 
         # 主动破墙策略
@@ -518,7 +567,7 @@ class Tank2Team(Team):
                         break # 这种情况仍然保持两人同时射击
                 else: # 没有 tank
                     returnActions[0]  = Action.STAY # 仍选一个
-                    hasTeamActions[0] = True
+                    hasTeamActions[0] = True'''
 
         #
         # 判断是否出现队友恰好打掉准备移动的队友的情况
@@ -560,13 +609,25 @@ class Tank2Team(Team):
                 # TODO:
                 #   好吧，这种情况和主动和队友打破重叠的行为是相斥的 ...
                 #
-                if (moveBattler.xy == shootBattler.xy
+                '''if (moveBattler.xy == shootBattler.xy
                     and moveBattler.is_face_to_enemy_base(ignore_brick=False)
                     and shootBattler.is_face_to_enemy_base(ignore_brick=False)
                     ):
                     returnActions[movePlayer.id] = Action.STAY
                     hasTeamActions[movePlayer.id] = True'''
 
+                #
+                # 先判断你这种情况 5ce92f70d2337e01c7abf587
+                #
+                stayID = shootBattler.id  # 默认让射击队友停下
+                stopPlayer = shootPlayer
+                if shootPlayer.has_status(Status.READY_TO_FIGHT_BACK):
+                    stayID = moveBattler.id
+                    stopPlayer = movePlayer
+
+                returnActions[stayID] = Action.STAY # 让射击的队友停下
+                hasTeamActions[stayID] = True
+                stopPlayer.set_status(Status.FORCED_STOP_TO_PREVENT_TEAM_HURT)
 
 
         action1, action2 = returnActions

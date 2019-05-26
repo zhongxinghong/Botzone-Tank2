@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-01 18:00:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 14:29:44
+# @Last Modified time: 2019-05-26 18:39:01
 """
 当前状态
 
@@ -60,17 +60,21 @@ class Status(object, metaclass=UniqueIntEnumMeta):
     FACING_TO_ENEMY_BASE         = 39  # 正面敌人基地，或者和敌人基地处在同一直线上
     READY_TO_FOLLOW_ENEMY        = 40  # 准备跟随墙后敌人的移动方向
     READY_TO_WITHDRAW            = 41  # 准备后撤
-    STAY_FOR_GUARDING_OUR_BASE   = 42  # 已经到达我方基地附近，准备停留等待
-    WAIT_FOR_WITHDRAWING         = 43  # 等待回防，可能是由于敌人阻挡
+    GRARD_OUR_BASE               = 42  # 已经到达我方基地附近，进入守卫状态
+    STAY_FOR_GUARDING_OUR_BASE   = 43  # 已经到达我方基地附近，准备停留等待
+    WAIT_FOR_WITHDRAWING         = 44  # 等待回防，可能是由于敌人阻挡
+    MOVE_TO_ANOTHER_GUARD_POINT  = 45  # 向着另一个 guard point 移动
 
-    READY_TO_PREPARE_FOR_BREAK_BRICK = 51 # 准备为破墙而准备闪避路线
-    READY_TO_BREAK_BRICK             = 52 # 准备破墙
-    READY_TO_BREAK_OVERLAP           = 53 # 准备主动打破重叠
-    READY_TO_FORCED_MARCH            = 54 # 准备主动强攻
+    READY_TO_PREPARE_FOR_BREAK_BRICK = 51  # 准备为破墙而准备闪避路线
+    READY_TO_BREAK_BRICK             = 52  # 准备破墙
+    READY_TO_BREAK_OVERLAP           = 53  # 准备主动打破重叠
+    READY_TO_FORCED_MARCH            = 54  # 准备主动强攻
+    FORCED_STOP_TO_PREVENT_TEAM_HURT = 55  # 防止团队间相互攻击而强制停止
+    READY_TO_BACK_AWAY_FROM_BRICK    = 56  # 准备主动反向远离墙壁
 
-    ATTEMPT_TO_KILL_ENEMY   = 60 # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
-    BLOCK_ROAD_FOR_OUR_BASE = 61 # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间
-    SACRIFICE_FOR_OUR_BASE  = 62 # 主动防御时，遇到敌方下一炮打掉基地，自己又恰好能阻挡
+    ATTEMPT_TO_KILL_ENEMY   = 60  # 主动防御时，尝试击杀敌军，这个状态可以用来记忆行为
+    BLOCK_ROAD_FOR_OUR_BASE = 61  # 主动防御时，遇到敌方面向基地，但没有炮弹，自己又恰好能阻挡在中间
+    SACRIFICE_FOR_OUR_BASE  = 62  # 主动防御时，遇到敌方下一炮打掉基地，自己又恰好能阻挡
 
 
     __Status_Name_Cache = None

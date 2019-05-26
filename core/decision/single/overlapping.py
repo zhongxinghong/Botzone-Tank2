@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:46:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 17:42:17
+# @Last Modified time: 2019-05-26 19:19:19
 
 __all__ = [
 
@@ -16,6 +16,7 @@ from ...action import Action
 from ...strategy.status import Status
 from ...strategy.label import Label
 from ...strategy.evaluate import evaluate_aggressive
+from .withdrawal import WithdrawalDecision
 
 #{ BEGIN }#
 
@@ -57,7 +58,9 @@ class OverlappingDecision(SingleDecisionMaker):
             oppPlayer = Tank2Player(oppBattler)
 
             if not player.has_status(Status.WITHDRAW):
-                status = evaluate_aggressive(battler, oppBattler)
+                _allowWithdraw = ( WithdrawalDecision.ALLOW_WITHDRAWAL
+                                    and not player.has_label(Label.DONT_WITHDRAW) )
+                status = evaluate_aggressive(battler, oppBattler, allow_withdraw=_allowWithdraw)
                 player.set_status(status)
             else:
                 status = Status.DEFENSIVE  # 看作是防御
@@ -287,7 +290,7 @@ class OverlappingDecision(SingleDecisionMaker):
                                 #
                                 '''if realAction == forbiddenAction:
                                     route1 = battler.get_shortest_attacking_route()
-                                    for optionalAction in battler.get_all_valid_move_action():
+                                    for optionalAction in battler.get_all_valid_move_actions():
                                         if (optionalAction == forbiddenAction
                                             or optionalAction == revertMoveAction # 不要回头
                                             ):

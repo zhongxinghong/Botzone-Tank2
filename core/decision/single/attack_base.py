@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:42:37
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 09:32:27
+# @Last Modified time: 2019-05-26 06:25:37
 
 __all__ = [
 
@@ -24,7 +24,7 @@ class AttackBaseDecision(SingleDecisionMaker):
     def _make_decision(self):
 
         player  = self._player
-        battler = player._battler
+        battler = player.battler
 
         # TODO:
         #   可能需要考虑一种特殊情况： 队友被杀，自己下一步打掉对方基地，但是对方下一步把我干掉

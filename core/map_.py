@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 06:45:37
+# @Last Modified time: 2019-05-26 19:31:09
 """
 地图类
 """
@@ -63,6 +63,27 @@ class Map(object):
 
 
 class Tank2Map(Map, metaclass=SingletonMeta):
+
+
+    class _Counter(object):
+        """
+        一个用于回滚计数的内部类
+        """
+        def __init__(self):
+            self._counter = 0
+
+        def increase(self):
+            self._counter += 1
+
+        def __iter__(self):
+            return iter(range(self._counter))
+
+        def __repr__(self):
+            return self._counter.__repr__()
+
+        def __int__(self):
+            return self._counter
+
 
     def __init__(self, width, height):
         super().__init__(width, height)
@@ -345,8 +366,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         #self.debug_print_out()
 
 
-    @contextmanager
-    def simulate_one_action(self, tank, action):
+    def simulate(self, tank, action):
         """
         模拟一回合：
             其中一架 tank 执行一个特定行为，其他 tank 均不动
@@ -358,24 +378,12 @@ class Tank2Map(Map, metaclass=SingletonMeta):
             - action   int                    下回合的行动
 
         """
-        try:
-            actions = [
-                [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
-            ]
-            actions[tank.side][tank.id] = action
-            self.perform(*actions)
-            #debug_print("simulate:", tank, action)
-            #self._revertIdx += 1
-            #self._revertStack.append( (self._revertIdx, tank, action) )
+        actions = [
+            [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
+        ]
+        actions[tank.side][tank.id] = action
+        self.perform(*actions)
 
-            yield
-
-        except Exception as e:
-            raise e
-        finally:
-            self.revert() # 不管出于什么错误，模拟结束后必定回滚
-            #self._revertStack.pop()
-            #debug_print("revert:", tank, action)
 
     def revert(self):
         """
@@ -418,6 +426,38 @@ class Tank2Map(Map, metaclass=SingletonMeta):
 
         return True
 
+
+    def undo_revert(self):
+        """
+        从当前回合主动回滚到之前回合后，再将 revert 这个动作撤销
+        """
+        nextTurn = self._turn + 1
+        assert nextTurn in self._performedActionsRecord, "no previously revert operation found"
+        actions = self._performedActionsRecord[nextTurn]
+        self.perform(*actions)
+
+
+    @contextmanager
+    def simulate_one_action(self, tank, action):
+        """
+        simulate 的 with 版用法，结束后会自动回滚
+        """
+        try:
+            self.simulate(tank, action)
+            #debug_print("simulate:", tank, action)
+            #self._revertIdx += 1
+            #self._revertStack.append( (self._revertIdx, tank, action) )
+
+            yield
+
+        except Exception as e:
+            raise e
+        finally:
+            self.revert() # 不管出于什么错误，模拟结束后必定回滚
+            #self._revertStack.pop()
+            #debug_print("revert:", tank, action)
+
+
     @contextmanager
     def rollback_to_previous(self):
         """
@@ -435,41 +475,37 @@ class Tank2Map(Map, metaclass=SingletonMeta):
             if success:
                 self.undo_revert() # 回合结束后撤销回滚
 
-    def undo_revert(self):
+
+    @contextmanager
+    def auto_revert(self):
         """
-        从当前回合主动回滚到之前回合后，再将 revert 这个动作撤销
+        自动实现多轮回滚
+
+        可以在 yield 后连续不定次调用 simulate 函数，模拟结束后自动调用 counter 次 revert
+        来自动多轮回滚
+
+        yield 后可以通过调用 cnt.increase 来增加回滚次数
+
         """
-        nextTurn = self._turn + 1
-        assert nextTurn in self._performedActionsRecord, "no previously revert operation found"
-        actions = self._performedActionsRecord[nextTurn]
-        self.perform(*actions)
+        try:
+            cnt = self.__class__._Counter()
+            yield cnt  # 每成功调用一次 map_.simulate 就需要调用一次 increase
+
+        except Exception as e:
+            raise
+        finally:
+            for _ in cnt:
+                self.revert()
+
 
     @contextmanager
     def auto_undo_revert(self):
         """
-        自动实现多轮回滚
-        外层函数通过调用 cnt.increase 来增加回滚次数
+        同上，但会在结束时通过调用 counter 次 undo_revert 来实现多轮 revert 操作的回滚
         """
-        class _Counter(object):
-
-            def __init__(self):
-                self._counter = 0
-
-            def increase(self):
-                self._counter += 1
-
-            def __iter__(self):
-                return iter(range(self._counter))
-
-            def __repr__(self):
-                return self._counter.__repr__()
-
-            def __int__(self):
-                return self._counter
-
         try:
-            cnt = _Counter()
-            yield cnt # 每成功调用一次 map_.revert 就调用一次 increase
+            cnt = self.__class__._Counter()
+            yield cnt  # 每成功调用一次 map_.revert 就需要调用一次 increase
 
         except Exception as e:
             raise

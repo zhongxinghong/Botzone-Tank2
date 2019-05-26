@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:03:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 14:33:06
+# @Last Modified time: 2019-05-26 19:17:28
 
 __all__ = [
 
@@ -18,6 +18,8 @@ from ...field import BrickField
 from ...strategy.evaluate import evaluate_aggressive, estimate_route_similarity
 from ...strategy.status import Status
 from ...strategy.signal import Signal
+from ...strategy.label import Label
+from .withdrawal import WithdrawalDecision
 
 #{ BEGIN }#
 
@@ -52,7 +54,9 @@ class ActiveDefenseDecision(SingleDecisionMaker):
         oppTank = battler.get_nearest_enemy() # 从路线距离分析确定最近敌人
         oppBattler = BattleTank(oppTank)
         oppPlayer = Tank2Player(oppBattler)
-        status = evaluate_aggressive(battler, oppBattler)
+        _allowWithdraw = ( WithdrawalDecision.ALLOW_WITHDRAWAL
+                            and not player.has_label(Label.DONT_WITHDRAW) )
+        status = evaluate_aggressive(battler, oppBattler, allow_withdraw=_allowWithdraw)
         player.set_status(status)
 
         if status == Status.DEFENSIVE:
@@ -129,7 +133,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                             and Action.is_stay(oppPlayer.get_previous_action(back=2))
                             ) # 或者对方等待了两个回合，视为没有危险
                         ):    # 不宜只考虑一回合，否则可能会出现这种预判错误的情况 5cdd894dd2337e01c79e9bed
-                        for moveAction in battler.get_all_valid_move_action():
+                        for moveAction in battler.get_all_valid_move_actions():
                             with map_.simulate_one_action(battler, moveAction):
                                 if battler.xy in enemyAttackRoute1: # 移动后我方坦克位于敌方坦克进攻路线上
                                     player.set_status(Status.READY_TO_BLOCK_ROAD)
@@ -137,7 +141,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                                     return moveAction
 
                         # 我方的移动后仍然不会挡敌人的路？？
-                        for moveAction in battler.get_all_valid_move_action(middle_first=True): # 中路优先
+                        for moveAction in battler.get_all_valid_move_actions(middle_first=True): # 中路优先
                             with map_.simulate_one_action(battler, moveAction):
                                 if battler.get_manhattan_distance_to(oppBattler) == 1: # 如果移动后与敌人相邻
                                     player.set_status(Status.READY_TO_BLOCK_ROAD)

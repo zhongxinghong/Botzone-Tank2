@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 17:36:40
+# @Last Modified time: 2019-05-26 22:19:23
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -105,18 +105,25 @@ class BattleTank(object):
     def canShoot(self): # 本回合是否可以射击
         return not Action.is_shoot(self._tank.previousAction)
 
-    def is_in_our_site(self):
+    def is_in_our_site(self, include_midline=False):
         """
-        是否处于我方半边的地图，不包含中线
+        是否处于我方半边的地图
+
+        Input:
+            - include_midline   bool   是否包含分界线
+
         """
         base = self._map.bases[self.side]
-        return ( np.abs( self.y - base.y ) < 4 )
+        if include_midline:
+            return ( np.abs( self.y - base.y ) <= 4 )
+        else:
+            return ( np.abs( self.y - base.y ) < 4 )
 
-    def is_in_enemy_site(self):
+    def is_in_enemy_site(self, include_midline=True):
         """
-        是否处于地方半边的地图，包含中线
+        是否处于地方半边的地图
         """
-        return not self.is_in_our_site()
+        return not self.is_in_our_site(include_midline= not include_midline)
 
     def get_surrounding_empty_field_points(self, **kwargs):
         """
@@ -144,7 +151,7 @@ class BattleTank(object):
                     continue
         return points
 
-    def get_all_valid_move_action(self, **kwargs):
+    def get_all_valid_move_actions(self, **kwargs):
         """
         所有合法的移动行为
         """
@@ -158,7 +165,7 @@ class BattleTank(object):
             actions.append(moveAction)
         return actions
 
-    def get_all_valid_shoot_action(self):
+    def get_all_valid_shoot_actions(self):
         """
         获得所有合法的射击行为
         """
@@ -171,7 +178,7 @@ class BattleTank(object):
         """
         获得所有合法的行为
         """
-        return self.get_all_valid_move_action() + self.get_all_valid_shoot_action() + [ Action.STAY ]
+        return self.get_all_valid_move_actions() + self.get_all_valid_shoot_actions() + [ Action.STAY ]
 
     def get_all_shortest_attacking_routes(self, ignore_enemies=True, bypass_enemies=False, delay=0, **kwargs):
         """
@@ -204,6 +211,8 @@ class BattleTank(object):
             matrix_T = fake_map_matrix_T_thinking_of_enemy_as_steel(map_, tank.side)
         else:
             matrix_T = map_.matrix_T
+
+        kwargs.setdefault("middle_first", False) # 优先边路搜索
 
         routes = find_all_routes_for_shoot(
                         tank.xy,
@@ -253,9 +262,10 @@ class BattleTank(object):
         tank    = self._tank
         map_    = self._map
         oppBase = map_.bases[1 - tank.side]
+        battler = self
 
         if route is None:
-            route = self.get_shortest_attacking_route()
+            route = battler.get_shortest_attacking_route()
 
         if route.is_not_found(): # 没有找到路线，这种情况不可能
             return Action.STAY
@@ -294,7 +304,7 @@ class BattleTank(object):
                             break # 队友坦克不进攻
                         continue  # 敌方坦克在此处不应该出现，他们应该在上游的决策中被考虑到
                     elif field is oppBase:
-                        if self.canShoot: # 这个时候如果能够射击，就优先射击
+                        if battler.canShoot: # 这个时候如果能够射击，就优先射击
                             return action + 4
                     else:
                         continue
@@ -302,9 +312,9 @@ class BattleTank(object):
             return action
 
         ## 遇到墙/敌方基地/坦克，不能移动
-        if self.canShoot: # 尝试射击
+        if battler.canShoot: # 尝试射击
             action += 4
-            for field in self.get_destroyed_fields_if_shoot(action):
+            for field in battler.get_destroyed_fields_if_shoot(action):
                 if isinstance(field, TankField) and field.side == tank.side:
                     return Action.STAY # 仅需要防止射到队友
             return action
@@ -427,7 +437,7 @@ class BattleTank(object):
         return route
 
 
-    def get_route_to_enemy_by_move(self, oppTank, block_teammate=True):
+    def get_route_to_enemy_by_move(self, oppTank, block_teammate=True, **kwargs):
         """
         近身条件下，获得到达对方的路劲
         """
@@ -446,14 +456,51 @@ class BattleTank(object):
                                 Field.BASE + 1 + side,
                             )
 
+        # 优先左右拦截
+        kwargs.setdefault("middle_first", True)
+        kwargs.setdefault("x_axis_first", True)
+
         route = find_shortest_route_for_move(
                             tank.xy,
                             oppTank.xy,
                             map_.matrix_T,
                             block_types=block_types,
-                            x_axis_first=True, # 优先左右拦截
+                            **kwargs,
                             )
         return route
+
+
+    def get_route_to_point_by_move(self, x2, y2, **kwargs):
+        """
+        这个函数仅限于在基地中获得用来移动到两个 guard point 的最短路径 ！s
+        """
+        tank = self._tank
+        map_ = self._map
+        side = tank.side
+
+        # 优先左右移动
+        kwargs.setdefault("middle_first", True)
+        kwargs.setdefault("x_axis_first", True)
+
+        route = find_shortest_route_for_move(
+                            tank.xy,
+                            (x2, y2),
+                            map_.matrix_T,
+                            block_types=DEFAULT_BLOCK_TYPES+(
+                                Field.BASE + 1 + side,
+                            ),
+                            **kwargs,
+                            )
+
+        return route
+
+
+    def get_route_to_field_by_move(self, field, **kwargs):
+        """
+        上一个函数的一个简单扩展
+        """
+        x2, y2 = field.xy
+        return self.get_route_to_point_by_move(x2, y2, **kwargs)
 
 
     def get_next_hunting_action(self, oppTank):
@@ -518,6 +565,13 @@ class BattleTank(object):
         x2, y2 = field.xy
         return get_manhattan_distance(x1, y1, x2, y2)
 
+
+    def get_manhattan_distance_to_point(self, x2, y2):
+        """
+        对上一函数的补充，允许传入 xy 作为变量
+        """
+        x1, y1 = self.xy
+        return get_manhattan_distance(x1, y1, x2, y2)
 
     def get_enemies_around(self):
         """
@@ -619,12 +673,14 @@ class BattleTank(object):
         tank = self._tank
         map_ = self._map
         side = tank.side
-        oppSide = 1 - side
         base = map_.bases[side]
-        oppBase = map_.bases[oppSide]
+        oppBase = map_.bases[1- side]
+        teammate = map_.tanks[side][1 - tank.id]
+        battler  = self
+
         x1, y1 = tank.xy
         x2, y2 = oppTank.xy
-        if self.is_in_our_site():
+        if battler.is_in_our_site():
             x3, y3 = base.xy     # 在本方地盘，优先朝自己基地的方向闪现
         else:
             x3, y3 = oppBase.xy  # 在对方地盘，优先朝着对方基地的方向闪现
@@ -637,6 +693,40 @@ class BattleTank(object):
             action = Action.get_action(x1, y1, x4, y4)
             if map_.is_valid_move_action(tank, action):
                 actions.append(action)
+
+        #
+        # 应该朝着远离队友的方向闪避？ 5ce915add2337e01c7abd895
+        #
+        # 因为 BUG ，这个功能尚未实现 5ce9ce0cd2337e01c7acfd5c
+        #
+
+        #
+        # 我决定不删掉这里的任何一条 DEBUG 注释来纪念这个花了 5 个小时都没有搞懂的 BUG
+        # 没有错，把下面这段全部注释掉，这个程序就一点 BUG 都没有了
+        #
+        '''def _cmp(action):
+            #debug_print("Inner: ", id(map_), id(battler), id(teammate), id(action), action)
+            #map_.debug_print_out()
+            with map_.simulate_one_action(tank, action):
+                #map_.debug_print_out()
+                return battler.get_manhattan_distance_to(teammate)'''
+
+        #debug_print("Before:", id(map_), id(battler), id(teammate), id(action), action)
+
+        #map_.debug_print_out()
+        #debug_print(teammate.previousAction)
+        '''if battler.on_the_same_line_with(teammate): # 仅仅在处于同一行时成立
+            #debug_print(actions)
+            actions.sort(key=lambda action: _cmp(action), reverse=True)
+            #debug_print(actions)'''
+        #debug_print(teammate.previousAction, "\n") # 因为一些奇怪的原因，地图没有正确回滚！！
+        #map_.debug_print_out()
+
+        #debug_print("After: ", id(map_), id(battler), id(teammate), id(action), action)
+        #debug_print("")
+
+        ### END BUG ###
+
         return actions
 
 
@@ -768,8 +858,8 @@ class BattleTank(object):
                     return False
             else:
                 _field = _fields[0]
-                if _field is field:
-                    return True # 是这个块
+                if _field.xy == field.xy: # 和这个块坐标相同（注意不要用 is 来判断，因为传入的可能是 BattleTank）
+                    return True
                 elif isinstance(_field, (EmptyField, WaterField) ):
                     continue
                 elif isinstance(_field, BrickField):

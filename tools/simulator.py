@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 11:25:35
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 05:08:10
+# @Last Modified time: 2019-05-26 01:25:58
 """
 无 GUI 的游戏模拟器，可以模拟播放比赛记录
 
@@ -37,12 +37,13 @@ game_const.SIMULATOR_PRINT   = config["simulator"]["print"]           # 是否�
 
 ## 游戏相关 ##
 MATCH_ID     = config["game"]["match_id"]      # 比赛 ID
+SIDE         = config["game"]["side"]          # 我方属于哪一方，这决定了使用什么数据源。
+                                               #     0 表示 blue.input.json, 1 表示 red.input.json
 INITIAL_TURN = config["game"]["initial_turn"]  # 从哪一回合开始
 
 ## 模拟器配置 ##
 TURN_INTERVAL  = config["simulator"]["turn_interval"]  #　在自动播放的情况下，每回合结束后时间间隔
 PAUSE_PER_TURN = config["simulator"]["pause"]          # 设置为非自动播放，每回合结束后需要用户按下任意键继续
-DATA_SOURCE    = config["simulator"]["data_source"]    #　数据源 0 表示 blue.input.json, 1 表示 red.input.json
 HIDE_DATA      = config["simulator"]["hide_data"]      # 是否隐藏游戏输出 json 中的 data 和 globaldata 字段
 
 
@@ -50,12 +51,12 @@ def main():
 
     from main import main as run_game
 
-    if DATA_SOURCE == 0:
+    if SIDE == 0:
         INPUT_JSON = os.path.join(DATASET_DIR, MATCH_ID, BLUE_INPUT_JSON_FILENAME)
-    elif DATA_SOURCE == 1:
+    elif SIDE == 1:
         INPUT_JSON = os.path.join(DATASET_DIR, MATCH_ID, RED_INPUT_JSON_FILENAME)
     else:
-        raise Exception("unknown side %s" % DATA_SOURCE)
+        raise Exception("unknown side %s" % SIDE)
 
     wholeInputJSON = json_load(INPUT_JSON)
 

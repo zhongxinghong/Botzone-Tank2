@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 18:05:35
+# @Last Modified time: 2019-05-26 23:25:27
 
 __all__ = [
 
@@ -158,7 +158,9 @@ class EncountEnemyDecision(SingleDecisionMaker):
             # 在非 WITHDRAW 的情况下，评估当前侵略性
             #
             if not player.has_status(Status.WITHDRAW):
-                status = evaluate_aggressive(battler, oppBattler)
+                _allowWithdraw = ( WithdrawalDecision.ALLOW_WITHDRAWAL
+                                    and not player.has_label(Label.DONT_WITHDRAW) )
+                status = evaluate_aggressive(battler, oppBattler, allow_withdraw=_allowWithdraw)
                 player.set_status(status)
             else:
                 status = Status.WITHDRAW
@@ -323,67 +325,70 @@ class EncountEnemyDecision(SingleDecisionMaker):
                     if battler.canShoot:
                         defenseAction = battler.shoot_to(oppBattler)
 
+
                     dodgeActions = battler.try_dodge(oppTank)
 
-                    #
-                    # 最佳方向是闪避向着进攻方向移动
-                    #
-                    attackAction = battler.get_next_attacking_action()
-                    for action in dodgeActions: # 与进攻方向相同的方向是最好的
-                        if Action.is_same_direction(action, attackAction):
-                            realAction = player.try_make_decision(action) # 风险评估
-                            if Action.is_move(realAction):
-                                player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
-                                return realAction # 闪避加行军
+                    if battler.is_in_enemy_site(): # 限制条件，只有在对方基地才开始闪现！
 
-
-                    # 没有最佳的闪避方案，仍然尝试闪避
-                    #-----------------------------
-                    # 但是不能向着增加攻击线路长短的方向闪避！
-                    #
-                    route1 = battler.get_shortest_attacking_route()
-                    for action in dodgeActions:
-                        realAction = player.try_make_decision(action)
-                        if Action.is_move(realAction):
-                            with map_.simulate_one_action(battler, action):
-                                route2 = battler.get_shortest_attacking_route()
-                            if route2.length > route1.length: # 不能超过当前路线长度，否则就是浪费一回合
-                                continue
-                            else:
-                                player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
-                                return realAction
-
-                    #
-                    # 此时还可以考虑借力
-                    # 假设下回合两方对射，如果我方尝试闪避，对方会恰好打掉我方进攻路线上的块，那么就闪避
-                    #
-                    if (len(dodgeActions) > 0         # 存在可用的闪避行为
-                        and battler.is_in_enemy_site() # 限制为只有在对方基地才适用这个逻辑
-                        ):
-                        _shouldDodge = False
-                        action = dodgeActions[0]
-                        enemyShootAction = oppBattler.shoot_to(battler)
-                        with outer_label() as OUTER_BREAK:
-                            with map_.simulate_one_action(battler, action): # 假设闪走
-                                fields = oppBattler.get_destroyed_fields_if_shoot(enemyShootAction)
-                                for field in fields:
-                                    if isinstance(field, BrickField): # 对手会打掉墙
-                                        for _route in battler.get_all_shortest_attacking_routes():
-                                            if field.xy in _route: # 这个块在某一个最短的攻击路线上
-                                                _shouldDodge = True
-                                                raise OUTER_BREAK
-                        if _shouldDodge:
-                            for action in dodgeActions:
-                                realAction = player.try_make_decision(action)
+                        #
+                        # 最佳方向是闪避向着进攻方向移动
+                        #
+                        attackAction = battler.get_next_attacking_action()
+                        for action in dodgeActions: # 与进攻方向相同的方向是最好的
+                            if Action.is_same_direction(action, attackAction):
+                                realAction = player.try_make_decision(action) # 风险评估
                                 if Action.is_move(realAction):
+                                    player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                    return realAction # 闪避加行军
+
+
+                        # 没有最佳的闪避方案，仍然尝试闪避
+                        #-----------------------------
+                        # 但是不能向着增加攻击线路长短的方向闪避！
+                        #
+                        route1 = battler.get_shortest_attacking_route()
+                        for action in dodgeActions:
+                            realAction = player.try_make_decision(action)
+                            if Action.is_move(realAction):
+                                with map_.simulate_one_action(battler, action):
+                                    route2 = battler.get_shortest_attacking_route()
+                                if route2.length > route1.length: # 不能超过当前路线长度，否则就是浪费一回合
+                                    continue
+                                else:
                                     player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
                                     return realAction
 
+                        #
+                        # 此时还可以考虑借力
+                        # 假设下回合两方对射，如果我方尝试闪避，对方会恰好打掉我方进攻路线上的块，那么就闪避
+                        #
+                        if (len(dodgeActions) > 0         # 存在可用的闪避行为
+                            and battler.is_in_enemy_site() # 限制为只有在对方基地才适用这个逻辑
+                            ):
+                            _shouldDodge = False
+                            action = dodgeActions[0]
+                            enemyShootAction = oppBattler.shoot_to(battler)
+                            with outer_label() as OUTER_BREAK:
+                                with map_.simulate_one_action(battler, action): # 假设闪走
+                                    fields = oppBattler.get_destroyed_fields_if_shoot(enemyShootAction)
+                                    for field in fields:
+                                        if isinstance(field, BrickField): # 对手会打掉墙
+                                            for _route in battler.get_all_shortest_attacking_routes():
+                                                if field.xy in _route: # 这个块在某一个最短的攻击路线上
+                                                    _shouldDodge = True
+                                                    raise OUTER_BREAK
+                            if _shouldDodge:
+                                for action in dodgeActions:
+                                    realAction = player.try_make_decision(action)
+                                    if Action.is_move(realAction):
+                                        player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                        return realAction
 
-
+                    #
                     # 没有不能不导致路线变长的办法，如果有炮弹，那么优先射击！
                     # 5ccef443a51e681f0e8e64d8
                     #-----------------------------------
+                    route1 = battler.get_shortest_attacking_route()
                     if Action.is_shoot(defenseAction):
                         player.set_status(Status.READY_TO_FIGHT_BACK)
                         if battler.on_the_same_line_with(oppBattler, ignore_brick=False):
@@ -425,6 +430,7 @@ class EncountEnemyDecision(SingleDecisionMaker):
                             player.set_status(Status.OPPOSITE_SHOOTING_WITH_ENEMY)
                             return defenseAction
 
+
                     # 如果不能射击，那么终究还是要闪避的
                     # 或者是无法后方移动，为了打破僵局，尝试闪避
                     #----------------------------------
@@ -440,7 +446,23 @@ class EncountEnemyDecision(SingleDecisionMaker):
                             return realAction
 
                     if Action.is_stay(defenseAction):
+                        #
+                        # 其实还有一种情况，那就是危险的敌人在自己身上！ 5ceaaacdd2337e01c7adf6a4
+                        #
+                        riskyEnemyBattler = player.get_risky_enemy()
+                        if (riskyEnemyBattler is not None
+                            and riskyEnemyBattler is not oppBattler
+                            and riskyEnemyBattler.xy == battler.xy
+                            ): # 这种情况下实际是没有威胁的 ...
+                            for action in dodgeActions:
+                                player.set_status(Status.KEEP_ON_MARCHING, Status.READY_TO_DODGE)
+                                # TODO:
+                                #   还需要判断是否向远路闪避 ...
+                                #   这里的细节还需要优化，或者这个和自己重叠的条件在前面就要穿插进去
+                                return action
+
                         player.set_status(Status.DYING) # 否则就凉了 ...
+
                     return defenseAction
 
                 return Action.STAY
@@ -604,12 +626,19 @@ class EncountEnemyDecision(SingleDecisionMaker):
                 #
                 # 否则就是不安全行为，应该予以反击
                 #
-                action = battler.shoot_to(oppBattler)
-                realAction = player.try_make_decision(action) # 射击或停留
-                if Action.is_shoot(action):
+                if battler.canShoot:
                     player.set_status(Status.READY_TO_FIGHT_BACK)
+                    return battler.shoot_to(oppBattler)
+                elif oppBattler.canShoot: # 否则应该闪避
+                    for action in battler.try_dodge(oppBattler):
+                        player.set_status(Status.READY_TO_DODGE)
+                        return action
 
-                return realAction
+                if oppBattler.canShoot:
+                    player.set_status(Status.DYING) # 不然就凉了 ...
+
+                # 最后就等待
+                return Action.STAY
 
 
 #{ END }#

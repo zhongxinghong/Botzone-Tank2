@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 17:45:05
+# @Last Modified time: 2019-05-26 21:12:58
 """
 状况评估
 """
@@ -26,21 +26,23 @@ from .search import get_searching_directions
 
 #{ BEGIN }#
 
-def evaluate_aggressive(battler, oppBattler, strict=False):
+def evaluate_aggressive(battler, oppBattler, strict=False, allow_withdraw=True):
     """
     根据敌我两架坦克的攻击线路长短，衡量当前侵略性
 
     Input:
-        - battler      BattleTank
-        - oppBattler   BattleTank
-        - strict   bool   是否严格依据路线长度和两方基地位置进行评估
-                          如果为 False ，则还会考虑其他的因素
+        - battler           BattleTank
+        - oppBattler        BattleTank
+        - strict            bool   是否严格依据路线长度和两方基地位置进行评估
+                                   如果为 False ，则还会考虑其他的因素
+        - allow_withdraw    bool   是否允许撤退
 
     Return:
         [status]
         - Status.AGGRESSIVE   我方处于攻击状态
         - Status.DEFENSIVE    我方处于防御状态
         - Status.STALEMENT    双方处于僵持状态
+        - Status.WITHDRAW     我方处于撤退状态
     """
     map_ = battler._map
     BattleTank = type(battler)
@@ -57,13 +59,13 @@ def evaluate_aggressive(battler, oppBattler, strict=False):
     # assert not myRoute.is_not_found() and not oppRoute.is_not_found(), "route not found"
     leadingLength = oppRoute.length - myRoute.length
 
-    # debug_print(battler, oppBattler, "leading:", leadingLength)
+    #debug_print(battler, oppBattler, "leading:", leadingLength)
 
     if battler.is_in_enemy_site(): # 在敌方半边地图，更倾向于不防御
 
         if leadingLength >= 1:
             status = Status.AGGRESSIVE
-        elif leadingLength < -2:
+        elif leadingLength < -3:
             status = Status.DEFENSIVE
         else:
             status = Status.STALEMENT
@@ -72,12 +74,15 @@ def evaluate_aggressive(battler, oppBattler, strict=False):
 
         if leadingLength >= 1:
             status = Status.AGGRESSIVE # [1, +)
-        elif -1 < leadingLength < 1:
-            status = Status.STALEMENT  # (-1, 1) == 0
-        elif -2 <= leadingLength <= -1:
-            status = Status.DEFENSIVE  # [-2, -1]
+        elif -1 <= leadingLength < 1:
+            status = Status.STALEMENT  # [-1, 1) == 0
+        elif -2 <= leadingLength < -1:
+            status = Status.DEFENSIVE  # [-2, -1)
         else:
-            status = Status.WITHDRAW   # (-, -2)
+            if allow_withdraw and battler.is_in_our_site(include_midline=True): # 包含中线，放松一点条件
+                status = Status.WITHDRAW   # (-, -2)
+            else:
+                status = Status.DEFENSIVE # 否则不要撤退？
 
     if strict: # 严格模式直接返回评估状态
         return status
@@ -105,7 +110,7 @@ def evaluate_aggressive(battler, oppBattler, strict=False):
 
         if not teammate.destroyed:
             teammateBattler = BattleTank(teammate)
-            for action in teammateBattler.get_all_valid_move_action() + [ Action.STAY ]:
+            for action in teammateBattler.get_all_valid_move_actions() + [ Action.STAY ]:
                 with map_.simulate_one_action(teammateBattler, action):
                     if teammateBattler.xy in oppRoute:  # 此时视为侵略模式
                         return Status.AGGRESSIVE

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 17:35:46
+# @Last Modified time: 2019-05-26 19:20:44
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -187,7 +187,10 @@ class Tank2Player(Player):
         self._opponents = opponents
 
     def get_risky_enemy(self):
-        return self._riskyEnemy
+        """
+        引起预期行为被拒的敌人，因为该敌人有可能在我方采用预期行为的下一回合将我方击杀
+        """
+        return self._riskyEnemy # -> BattleTank
 
     def set_risky_enemy(self, enemy):
         self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
@@ -268,12 +271,6 @@ class Tank2Player(Player):
             player = self
         return self._team.get_previous_attcking_route(self)
 
-    def get_risky_enemy_battler(self):
-        """
-        引起预期行为被拒的敌人，因为该敌人有可能在我方采用预期行为的下一回合将我方击杀
-        """
-        return self._riskyEnemy # -> BattleTank
-
     def _is_safe_action(self, action):
         """
         评估该这个决策是否安全
@@ -284,6 +281,7 @@ class Tank2Player(Player):
         tank    = self._tank
         map_    = self._map
         battler = self._battler
+        teammate = map_.tanks[tank.side][1 - tank.id]
 
         if not map_.is_valid_action(tank, action): # 先检查是否为有效行为
             return False
@@ -294,6 +292,7 @@ class Tank2Player(Player):
         # 移动情况下有一种可能的风险
         #--------------------------
         # 1. 需要考虑移动后恰好被对方打中
+        # 2. 移动后恰好遇到两个敌人，假设当前回合敌人不动
         # -------------------------
         if Action.is_move(action):
             oppBattlers = [ _player.battler for _player in self._opponents ]
@@ -302,23 +301,37 @@ class Tank2Player(Player):
                 if not oppBattler.canShoot: # 对手本回合无法射击，则不必担心
                     riskFreeOpps.append(oppBattler)
             with map_.simulate_one_action(tank, action): # 提交地图模拟情况
+
+                if len( battler.get_enemies_around() ) > 1: # 移动后遇到两个敌人
+                    battler1, battler2 = oppBattlers
+                    x1, y1 = battler1.xy
+                    x2, y2 = battler2.xy
+                    if x1 != x2 and y1 != y2: # 并且两个敌人不在同一直线上
+                        self.set_risky_enemy(battler1) # 随便设置一个？
+                        return False
+
                 for oppBattler in oppBattlers:
                     if oppBattler.destroyed:
                         continue
                     elif oppBattler in riskFreeOpps:
                         continue
                     for enemy in oppBattler.get_enemies_around():
-                        if enemy is tank:
-                            self._riskyEnemy = oppBattler
+                        if enemy is tank: # 移动后可能会被敌人打中
+                            self.set_risky_enemy(oppBattler)
                             return False
+
 
         # 射击情况下有两种可能的危险
         #--------------------------
         # 1. 打破一堵墙，然后敌人在后面等着
+        #      注意区分两个敌人的情况！ 5ce92ed6d2337e01c7abf544
         # 2. 身边没有闪避的机会，打破一堵墙，对方刚好从旁路闪出来
+        # 3. 打到队友！ 5ce90c6dd2337e01c7abce7a
         #---------------------------
         if Action.is_shoot(action):
             destroyedFields = battler.get_destroyed_fields_if_shoot(action)
+            if not teammate.destroyed and teammate in destroyedFields:
+                return False # 打到队友当然不安全！
             with map_.simulate_one_action(battler, action): # 模拟本方行为
                 #
                 # TODO:
@@ -329,10 +342,8 @@ class Tank2Player(Player):
                     if oppTank.destroyed:
                         continue
                     oppBattler = BattleTank(oppTank)
-                    for oppAction in Action.MOVE_ACTIONS: # 任意移动行为
-                        if not map_.is_valid_action(oppTank, oppAction):
-                            continue
-                        with map_.simulate_one_action(oppTank, oppAction): # 模拟敌方行为
+                    for oppAction in oppBattler.get_all_valid_move_actions(): # 任意移动行为
+                        with map_.simulate_one_action(oppBattler, oppAction): # 模拟敌方行为
                             for field in destroyedFields:
                                 if field.xy == oppTank.xy:
                                     break # 对方下一步不可能移动到我即将摧毁的 field 上，所以这种情况是安全的
@@ -342,10 +353,23 @@ class Tank2Player(Player):
                                         # 还可以尝试回避
                                         actions = battler.try_dodge(oppBattler)
                                         if len(actions) == 0: # 无法回避，危险行为
-                                            self._riskyEnemy = oppBattler
+                                            self.set_risky_enemy(oppBattler)
                                             return False
 
         return True # 默认安全？
+
+
+    def try_make_decision(self, action, instead=Action.STAY):
+        """
+        用这个函数提交决策
+        如果这个决策被判定是危险的，那么将提交 instead 行为
+        """
+        if not Action.is_valid(action):
+            return instead
+        elif not self._is_safe_action(action):
+            return instead
+        else:
+            return action
 
 
     def is_safe_to_close_to_this_enemy(self, oppBattler):
@@ -378,7 +402,7 @@ class Tank2Player(Player):
                 with map_.simulate_one_action(tank, action):
                     for enemy in _oppBattler.get_enemies_around():
                         if enemy is tank: # 我方坦克将出现在它旁边，并且它可以射击
-                            self._riskyEnemy = _oppBattler
+                            self.set_risky_enemy(_oppBattler)
                             return False # 可能被偷袭
 
             else: # 此处判断不会被偷袭
@@ -417,7 +441,7 @@ class Tank2Player(Player):
             with map_.simulate_one_action(tank, action): # 提交模拟
                 for enemy in _oppBattler.get_enemies_around():
                     if enemy is tank: # 不安全，可能有风险
-                        self._riskyEnemy = _oppBattler
+                        self.set_risky_enemy(_oppBattler)
                         return False
         else:
             return True # 否则是安全的
@@ -461,19 +485,6 @@ class Tank2Player(Player):
                 return False
 
         return True
-
-
-    def try_make_decision(self, action, instead=Action.STAY):
-        """
-        用这个函数提交决策
-        如果这个决策被判定是危险的，那么将提交 instead 行为
-        """
-        if not Action.is_valid(action):
-            return instead
-        elif not self._is_safe_action(action):
-            return instead
-        else:
-            return action
 
     # @override
     def make_decision(self, signal=Signal.NONE):
@@ -523,7 +534,10 @@ class Tank2Player(Player):
         if battler.is_face_to_enemy_base():
             player.set_status(Status.FACING_TO_ENEMY_BASE)
 
-        if player.has_label(Label.KEEP_ON_WITHDRAWING):
+        if (not player.has_label(Label.DONT_WITHDRAW)
+            and player.has_label(Label.KEEP_ON_WITHDRAWING)
+            and WithdrawalDecision.ALLOW_WITHDRAWAL
+            ):
             player.remove_status(Status.AGGRESSIVE, Status.DEFENSIVE, Status.STALEMENT)
             player.set_status(Status.WITHDRAW) # 先保持着 这个状态
 

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 14:33:05
+# @Last Modified time: 2019-05-26 22:00:53
 
 __all__ = [
 
@@ -344,6 +344,37 @@ class MarchingDecision(SingleDecisionMaker):
 
 
                 #
+                # 考虑这样一种情况，如果下回合我可以射击且对方可以射击，我们中间差两个墙，如果我方不射击
+                # 对方可能就会压制过来，这样就很亏，所以当双方都有炮且两者间差一个墙的时候，我方优先射击
+                # 5cea974dd2337e01c7add31f
+                #
+                if (( player.has_status(Status.AGGRESSIVE) or player.has_status(Status.STALEMENT) )
+                    and Action.is_move(realAction)
+                    and battler.canShoot
+                    ):
+                    shootAction = realAction + 4
+                    _hasEnemyBehindTwoBricks = False
+                    oppBattler = None
+                    destroyedFields = battler.get_destroyed_fields_if_shoot(shootAction)
+                    if (len(destroyedFields) == 1 and isinstance(destroyedFields[0], BrickField) # 前方是墙
+                        and battler.get_enemy_behind_brick(shootAction, interval=-1) is None     # 现在墙后无人
+                        ):
+                        with map_.simulate_one_action(battler, shootAction):
+                            destroyedFields = battler.get_destroyed_fields_if_shoot(shootAction)
+                            if len(destroyedFields) == 1 and isinstance(destroyedFields[0], BrickField): # 现在前面还有墙
+                                enemy = battler.get_enemy_behind_brick(shootAction, interval=-1)
+                                if enemy is not None: # 此时墙后有人
+                                    _hasEnemyBehindTwoBricks = True
+                                    oppBattler = BattleTank(enemy)
+
+                    if _hasEnemyBehindTwoBricks:
+                        if oppBattler.canShoot: # 此时对方也可以射击
+                            player.set_status(Status.KEEP_ON_MARCHING)
+                            returnAction = shootAction # 那么我方这回合优先开炮，避免随后和对方进入僵持阶段
+                            raise OUTER_BREAK
+
+
+                #
                 # move action 在这之前必须要全部处理完！
                 #
 
@@ -438,7 +469,7 @@ class MarchingDecision(SingleDecisionMaker):
                         # 先找到威胁我方坦克的位置
                         _enemyRiskySite = None # (x, y)
                         with map_.simulate_one_action(battler, realAction):
-                            for _action in oppBattler.get_all_valid_move_action():
+                            for _action in oppBattler.get_all_valid_move_actions():
                                 with map_.simulate_one_action(oppBattler, _action):
                                     if battler.on_the_same_line_with(oppBattler):
                                         _enemyRiskySite = oppBattler.xy
