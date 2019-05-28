@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-20 07:21:31
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 01:36:58
+# @Last Modified time: 2019-05-28 10:01:08
 
 __all__ = [
 
@@ -10,14 +10,14 @@ __all__ = [
 
     ]
 
-from ..abstract import SingleDecisionMaker
+from ..abstract import RespondTeamSignalDecisionMaker
 from ...action import Action
 from ...strategy.status import Status
 from ...strategy.signal import Signal
 
 #{ BEGIN }#
 
-class LeaveTeammateDecision(SingleDecisionMaker):
+class LeaveTeammateDecision(RespondTeamSignalDecisionMaker):
     """
     处理两人重叠的情况
     --------------------
@@ -27,6 +27,8 @@ class LeaveTeammateDecision(SingleDecisionMaker):
     3. 尽量往不导致进攻路线增加的方向移动
 
     """
+    HANDLED_SIGNALS = ( Signal.SHOULD_LEAVE_TEAMMATE, )
+
     def _make_decision(self):
 
         player   = self._player

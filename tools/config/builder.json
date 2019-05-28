@@ -145,6 +145,46 @@
         "file": "../core/decision/single/marching.py"
     },
     {
+        "package": "decision/team",
+        "file": "../core/decision/team/individual.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/vital.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/leave_teammate.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/forced_attack.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/break_brick.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/back_to_help.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/prevent_team_hurt.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "..//core/decision/team/cut_through_midline.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/cooperative_attack.py"
+    },
+    {
+        "package": "decision/team",
+        "file": "../core/decision/team/dummy_ending.py"
+    },
+    {
         "package": "",
         "file": "../core/player.py"
     },

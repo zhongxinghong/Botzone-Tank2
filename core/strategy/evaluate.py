@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 21:12:58
+# @Last Modified time: 2019-05-28 16:10:43
 """
 状况评估
 """
@@ -75,7 +75,7 @@ def evaluate_aggressive(battler, oppBattler, strict=False, allow_withdraw=True):
         if leadingLength >= 1:
             status = Status.AGGRESSIVE # [1, +)
         elif -1 <= leadingLength < 1:
-            status = Status.STALEMENT  # [-1, 1) == 0
+            status = Status.STALEMENT  # [-1, 1)
         elif -2 <= leadingLength < -1:
             status = Status.DEFENSIVE  # [-2, -1)
         else:

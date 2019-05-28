@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:01:59
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 22:19:23
+# @Last Modified time: 2019-05-29 02:07:16
 """
 采用装饰器模式，对 TankField 进行包装，使之具有判断战场形势的能力
 
@@ -105,6 +105,28 @@ class BattleTank(object):
     def canShoot(self): # 本回合是否可以射击
         return not Action.is_shoot(self._tank.previousAction)
 
+    def is_this_field_in_our_site(self, field, include_midline=False):
+        """
+        判断某个 field 是否位于我方半边地盘
+
+        Input:
+            - field             Field
+            - include_midline   bool    是否包含分界线
+
+        """
+        base = self._map.bases[self.side]
+        if include_midline:
+            return ( np.abs( field.y - base.y ) <= 4 )
+        else:
+            return ( np.abs( field.y - base.y ) < 4 )
+
+    def is_this_field_in_enemy_site(self, field, include_midline=False): # 默认不包含中线
+        """
+        是否处于敌方半边的地图
+
+        """
+        return not self.is_this_field_in_our_site(field, include_midline= not include_midline)
+
     def is_in_our_site(self, include_midline=False):
         """
         是否处于我方半边的地图
@@ -113,17 +135,24 @@ class BattleTank(object):
             - include_midline   bool   是否包含分界线
 
         """
-        base = self._map.bases[self.side]
-        if include_midline:
-            return ( np.abs( self.y - base.y ) <= 4 )
-        else:
-            return ( np.abs( self.y - base.y ) < 4 )
+        return self.is_this_field_in_our_site(self.tank, include_midline=include_midline)
 
     def is_in_enemy_site(self, include_midline=True):
         """
         是否处于地方半边的地图
         """
-        return not self.is_in_our_site(include_midline= not include_midline)
+        return self.is_this_field_in_enemy_site(self.tank, include_midline=include_midline)
+
+    def is_near_midline(self, offset=1):
+        """
+        是否在中线附近
+
+        Input:
+            - offset   int   定义中线范围为 4 ± offset 的范围
+                             例如 offset = 1 则 [3, 5] 均为中线范围
+        """
+        return ( np.abs( self.y - 4 ) <= offset )
+
 
     def get_surrounding_empty_field_points(self, **kwargs):
         """
@@ -322,6 +351,20 @@ class BattleTank(object):
         # 不能射击，只好等待
         return Action.STAY
 
+    def get_all_next_attacking_actions(self, routes=None):
+        """
+        返回所有给定路线的下一回合行为的并集
+
+        Input:
+            - route   [Route]/None
+
+        Return:
+            - actions   [int]
+
+        """
+        if routes is None:
+            routes = self.get_all_shortest_attacking_routes() # 默认用所有最短的进攻路线
+        return list(set( self.get_next_attacking_action(route) for route in routes ))
 
     def get_all_shortest_defensive_routes(self, delay=0, **kwargs):
         """
@@ -922,6 +965,18 @@ class BattleTank(object):
         return []
 
 
+    def will_destroy_a_brick_if_shoot(self, action):
+        """
+        如果当前回合射击，是否能够摧毁一个墙
+        """
+        destroyedFields = self.get_destroyed_fields_if_shoot(action)
+        if len(destroyedFields) == 1:
+            field = destroyedFields[0]
+            if isinstance(field, BrickField):
+                return True
+        return False
+
+
     def is_face_to_enemy_base(self, ignore_brick=False):
         """
         是否直面对方基地，或者是与敌人基地处在同一条直线上 （一个历史遗留接口）
@@ -1135,5 +1190,34 @@ class BattleTank(object):
         x2, y2 = field.xy
         return ( np.abs( x1 - x2 ) <= layer and np.abs( y1 - y2 ) <= layer )
 
+    def get_enemy_delay_if_bypass_me(self, oppBattler):
+        """
+        假设自己不移动，敌人必须要饶过我，那么他将因此延迟多少步
+
+        """
+        route1 = oppBattler.get_shortest_attacking_route(ignore_enemies=True, bypass_enemies=False)
+        route2 = oppBattler.get_shortest_attacking_route(ignore_enemies=False, bypass_enemies=True)
+
+        if route1.is_not_found(): # TODO: 如何处理本来就找不到路的情况?
+            return INFINITY_ROUTE_LENGTH
+
+        if route2.is_not_found():
+            return INFINITY_ROUTE_LENGTH
+
+        delay = route2.length - route1.length
+        assert delay >= 0 # 显然必定会大于 0 ！
+
+        return delay
+
+
+    def can_block_this_enemy(self, oppBattler):
+        """
+        假设自己不移动，对方将不得不绕路，或者他将因此无路可走，那么就算是成功堵住了他
+
+        """
+        delay = self.get_enemy_delay_if_bypass_me(oppBattler)
+        if delay == INFINITY_ROUTE_LENGTH: # 让敌人根本无路可走
+            return True
+        return (delay >= 2) # 造成两步步以上的延迟，那么就算堵路成功
 
 #{ END }#

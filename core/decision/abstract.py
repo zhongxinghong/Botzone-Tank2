@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 # @Author: Administrator
 # @Date:   2019-05-15 15:40:04
-# @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-21 20:57:24
+# @Last Modified by:   zhongxinghong
+# @Last Modified time: 2019-05-27 21:10:24
 
 __all__ = [
 
     "DecisionMaker",
     "SingleDecisionMaker",
     "RespondTeamSignalDecisionMaker",
+    "TeamDecisionMaker",
 
     ]
 
+from ..utils import debug_print
 from ..action import Action
 from ..strategy.signal import Signal
 
@@ -81,7 +83,7 @@ class SingleDecisionMaker(DecisionMaker):
     """
     UNHANDLED_RESULT = Action.INVALID
 
-    def __init__(self, player, signal, **kwargs):
+    def __init__(self, player, signal):
         """
         重写的构造函数，确保与 Tank2Player._make_decision 接口的参数列表一致
 
@@ -127,6 +129,58 @@ class RespondTeamSignalDecisionMaker(SingleDecisionMaker):
                 raise Exception("team signal %d must be responded" % signal)
             return self.__class__.UNHANDLED_RESULT
         return res
+
+
+class TeamDecisionMaker(DecisionMaker):
+    """
+    团队决策的抽象基类，用于 Tank2Team 的双人决策
+
+    TeamDecision 与 SingleDecision 不一样，它不存在最优的决策者，
+    而是所有决策者都会尝试进行一次决策。决策存在高低优先级，高优先级的决策者
+    如果对某个 player 的行为进行了协调，那么低优先级的决策者不应该覆盖高优先级
+    决策者的现有决策结果（当然极其特殊的决策者例外）。
+
+    如果使用 DecisionChain 进行多个团队决策者的连续决策，
+    那么整个决策链上的所有决策者必定都会进行一次决策。
+
+    """
+    def __init__(self, team):
+        self._team = team  # Tank2Team
+
+        if self.__class__ is __class__:
+            raise NotImplementedError
+
+    def is_handled(self, result):
+        """
+        为了适应 DecisionChain 的决策，这里重写 is_handled 函数
+        使得无论如何都可以让 DecisionChain 继续
+        """
+        return False
+
+    def _make_decision(self, *args, **kwargs):
+        """
+        派生类重写的 _make_decision 要求返回值必须是 [int, int]
+
+        """
+        raise NotImplementedError
+        return [ Action.INVALID, Action.INVALID ]
+
+    def make_decision(self):
+        """
+        重写 makd_decision 接口
+
+        确保在决策完成后 player1, player2 的决策结果与返回结果同步
+        这主要考虑到在决策的时候可能会忘记 create_snapshot ...
+
+        """
+        team = self._team
+        player1, player2 = team.players
+
+        action1, action2 = self._make_decision()
+        player1.set_current_decision(action1)
+        player2.set_current_decision(action2)
+
+        return [ action1, action2 ]
 
 
 #{ END }#

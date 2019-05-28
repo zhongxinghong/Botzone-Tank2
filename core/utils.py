@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-26 22:07:11
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-24 04:32:06
+# @Last Modified time: 2019-05-29 00:01:20
 """
 工具类
 """
@@ -16,6 +16,7 @@ __all__ = [
     "simulator_pprint",
 
     "outer_label",
+    "memorize",
 
     "CachedProperty",
     "SingletonMeta",
@@ -26,7 +27,7 @@ __all__ = [
     ]
 
 from .const import DEBUG_MODE, SIMULATOR_ENV, SIMULATOR_PRINT
-from .global_ import pprint, pickle, base64, gzip, contextmanager
+from .global_ import pprint, pickle, base64, gzip, contextmanager, hashlib, functools, types
 
 #{ BEGIN }#
 
@@ -62,25 +63,24 @@ def outer_label():
     except _GotoOuterException:     #　这样做是为了防止嵌套的情况下，无法从内层直接跳到最外层
         pass
 
+class _Missing(object):
+    """
+    from werkzeug._internal
+    """
+    def __repr__(self):
+        return 'no value'
+
+    def __reduce__(self):
+        return '_missing'
+
+
+_MISSING = _Missing()
+
 
 class CachedProperty(property):
     """
     from werkzeug.utils
     """
-    class _Missing(object):
-        """
-        from werkzeug._internal
-        """
-        def __repr__(self):
-            return 'no value'
-
-        def __reduce__(self):
-            return '_missing'
-
-
-    _MISSING = _Missing()
-
-
     def __init__(self, func, name=None, doc=None):
         self.__name__ = name or func.__name__
         self.__module__ = func.__module__
@@ -93,8 +93,8 @@ class CachedProperty(property):
     def __get__(self, obj, type=None):
         if obj is None:
             return self
-        value = obj.__dict__.get(self.__name__, __class__._MISSING)
-        if value is __class__._MISSING:
+        value = obj.__dict__.get(self.__name__, _MISSING)
+        if value is _MISSING:
             value = self.func(obj)
             obj.__dict__[self.__name__] = value
         return value
@@ -105,6 +105,52 @@ class CachedProperty(property):
         清除缓存
         """
         obj.__dict__.pop(key, None)
+
+
+def memorize(func):
+    """
+    根据参数列表缓存函数的返回值的修饰器
+    ------------------------------------
+
+    1. func 会以 __memory__ 缓存返回结果
+    2. func 会带上 make_key 方法，可以用来获取传入参数列表对应的缓存 key
+    3. func 会带上 clear_memory 方法，可以清空所有的缓存结果
+    4. 如果返回值是生成器，会立即获得完整结果并转为 tuple 类型
+
+
+    这个函数主要用于缓存搜索路径
+
+    """
+    def _make_key(func, *args, **kwargs):
+        _key = (
+            func.__module__,
+            func.__name__,
+            args,
+            sorted(kwargs.items()) # kwargs 自动排序
+        )
+        return hashlib.md5(pickle.dumps(_key)).hexdigest()
+
+    def _clear_memory(func):
+        if hasattr(func, "__memory__"):
+            func.__memory__.clear()
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if not hasattr(func, "__memory__"):
+            func.__memory__ = {}
+        key = _make_key(func, *args, **kwargs)
+        res = func.__memory__.get(key, _MISSING)
+        if res is _MISSING:
+            res = func(*args, **kwargs)
+            if isinstance(res, types.GeneratorType):
+                res = list(res) # 如果返回结果是生成器，那么马上获得所有结果
+            func.__memory__[key] = res
+        return res
+
+    wrapper.make_key = functools.partial(_make_key, func)
+    wrapper.clear_memory = functools.partial(_clear_memory, func)
+
+    return wrapper
 
 
 class SingletonMeta(type):

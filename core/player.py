@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 00:35:10
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 19:20:44
+# @Last Modified time: 2019-05-29 03:05:38
 """
 游戏玩家，操作着一架坦克，充当单人决策者
 
@@ -23,7 +23,8 @@ from .strategy.signal import Signal
 from .strategy.status import Status
 from .strategy.label import Label
 from .decision.abstract import DecisionMaker
-from .decision import DecisionChain, MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
+from .decision.chain import DecisionChain
+from .decision.single import MarchingDecision, ActiveDefenseDecision, BaseDefenseDecision,\
     OverlappingDecision, EncountEnemyDecision, AttackBaseDecision, LeaveTeammateDecision,\
     BehindBrickDecision, FollowEnemyBehindBrickDecision, WithdrawalDecision
 
@@ -75,19 +76,76 @@ class Tank2Player(Player):
         self._tank = tank
         self._map = map
         self._battler = BattleTank(tank, map)
-        self._team = None          # Tank2Team
-        self._teammate = None      # Tank2Player
-        self._opponents = None     # [Tank2Player, Tank2Player]
-        self._status = set()       # 当前回合的状态，可以有多个，每回合情况
-        self._labels = set()       # 对手给我做的标记，标记后长期有效
-        self._riskyEnemy = None    # 缓存引起潜在风险的敌人 BattleTank
-        self._decision = None      # 缓存最终的决策
-        self._currentRoute = None  # 缓存这回合的攻击路线。这个属性加入较早，只缓存了 marching 逻辑下额路线
+        self._team = None             # Tank2Team
+        self._teammate = None         # Tank2Player
+        self._opponents = None        # [Tank2Player, Tank2Player]
+        self._status = set()          # 当前回合的状态，可以有多个，每回合情况
+        self._labels = set()          # 对手给我做的标记，标记后长期有效
+        self._riskyEnemy = None       # 缓存引起潜在风险的敌人 BattleTank
+        self._currentRoute = None     # 缓存这回合的攻击路线。这个属性加入较早，只缓存了 marching 逻辑下的路线
+        self._currentDecision = None  # 缓存决策结果，注：每调用一次 make_decision 就会自动修改一次这个结果
+        self._teamDecision = None     # 缓存团队策略
 
-        # 备忘：
-        #------------
-        # player 存在创建还原点的能力，如果在这个地方添加了新的临时变量，那么记得在创建还原点函数上
-        # 同步添加相应的功能，确保回滚后能够得到和刚才完全相同的情况
+
+    class _SnapshotManager(object):
+        """
+        用于管理 player 还原点的创建、选择回滚等行为
+        ---------------------------------------------
+        可以为 player 在决策过程中产生的临时变量创建快照，如果在此后又进行了重新决策，但是又不想让这个
+        决策修改之前决策时留下的临时变量，那么就可以在新的决策前先通过这个类创建一个快照，结束后再通过快照
+        进行回滚。
+
+
+        关于还原点的创建
+        ----------------
+        1. 对于可能被修改地址指向内存的属性，需要创建一个深拷贝，例如 set, list 类型的属性
+        2. 对于只是储存引用的属性，那么此处只需要复制引用。这对于采用单例模式设计的类的实例来说是必须的
+        3. 对于不可变对象，只需进行简单的值复制
+
+        """
+        MUTABLE_ATTRIBUTES   = ( "_status", "_labels" )
+        IMMUTABLE_ATTRIBUTES = ( "_currentDecision", "_teamDecision" )
+        REFERENCE_ATTRIBUTES = ( "_currentRoute", "_riskyEnemy" )
+        TEMPORARY_ATTRIBUTES = MUTABLE_ATTRIBUTES + IMMUTABLE_ATTRIBUTES + REFERENCE_ATTRIBUTES
+
+        def __init__(self):
+            self._snapshot = None
+            self._discarded = False # 是否废弃当前快照，让 player 的状态永久改变
+
+        def create_snapshot(self):
+            """
+            创建一个快照
+            由于决策时可能还会更改敌人的状态，所以实际上是给所有人创建快照
+            """
+            snapshot = self._snapshot = {} # (side, id) -> attributes
+            for _key, player in Tank2Player._instances.items():
+                cache = snapshot[_key] = {}
+                for attr, value in player.__dict__.items():
+                    if attr in self.__class__.MUTABLE_ATTRIBUTES:
+                        cache[attr] = deepcopy(value) # 创建深拷贝
+                    elif attr in self.__class__.IMMUTABLE_ATTRIBUTES:
+                        cache[attr] = value # 复制值
+                    elif attr in self.__class__.REFERENCE_ATTRIBUTES:
+                        cache[attr] = value # 复制引用
+
+        def restore(self):
+            """
+            恢复到还原点的状态
+            """
+            if self._discarded: # 保存更改的情况下，不再回滚
+                return
+            snapshot = self._snapshot
+            for _key, player in Tank2Player._instances.items():
+                cache = snapshot[_key]
+                for attr in self.__class__.TEMPORARY_ATTRIBUTES:
+                    player.__dict__[attr] = cache[attr]
+
+        def discard_snapshot(self):
+            """
+            是否丢弃当前 snapshot，保存变更。
+            之后如果再调用 restrore，将不会当前 snapshot 还原 player 的状态
+            """
+            self._discarded = True
 
 
     def __eq__(self, other):
@@ -142,37 +200,15 @@ class Tank2Player(Player):
         创建一个还原点，然后该 player 进行决策，决策完成后回滚
         """
         try:
-            #
-            # 1. 对于在模拟过程中可能被修改地址指向内存的属性，需要创建一个深拷贝，例如 set, list
-            # 2. 对于在模拟过程中只可能改变引用的属性，那么此处只缓存引用
-            #    这对于采用单例模式设计的类来说是必须的
-            #
-            deepcopyVars       = ( "_status","_labels","_decision", )
-            cacheReferenceVars = ( "_currentRoute","_riskyEnemy", )
-            temporaryVars = deepcopyVars + cacheReferenceVars
+            manager = self.__class__._SnapshotManager()
+            manager.create_snapshot()
 
-            snapshot = {}  # (side, id) -> attributes
-
-            # 由于决策时可能还会更改敌人的状态，所以实际上是给所有人创建快照
-            for _key, player in self.__class__._instances.items():
-                cache = snapshot[_key] = {}
-                for attr, value in player.__dict__.items():
-                    if attr in deepcopyVars:
-                        cache[attr] = deepcopy(value)
-                    elif attr in cacheReferenceVars:
-                        cache[attr] = value
-
-            yield
+            yield manager # 可以选择不接 snapshot
 
         except Exception as e:
             raise e
         finally:
-            # 结束后利用快照还原
-            for _key, player in self.__class__._instances.items():
-                cache = snapshot[_key]
-                for attr in temporaryVars:
-                    player.__dict__[attr] = cache[attr]
-
+            manager.restore()
 
     def set_team(self, team):
         self._team = team
@@ -195,11 +231,20 @@ class Tank2Player(Player):
     def set_risky_enemy(self, enemy):
         self._riskyEnemy = BattleTank(enemy) # 确保为 BattleTank 对象
 
-    def get_current_decision(self): # 返回已经做出的决策
-        return self._decision
+    def get_current_decision(self): # 返回最后一次决策的结果，用于队员间交流
+        return self._currentDecision
 
-    def change_current_decision(self, action): # 团队用来修改队员当前决策的缓存
-        self._decision = action
+    def set_current_decision(self, action): # 用于团队设置队员的当前决策
+        self._currentDecision = action
+
+    def get_team_decision(self): # 获得当前的团队决策
+        return self._teamDecision
+
+    def has_team_decision(self):
+        return ( self._teamDecision is not None )
+
+    def set_team_decision(self, action): # 用于团队设置队员的团队决策
+        self._teamDecision = action
 
     def get_current_attacking_route(self):
         return self._currentRoute
@@ -241,34 +286,16 @@ class Tank2Player(Player):
     def clear_labels(self): # 清楚全部标记
         self._labels.clear()
 
-    def has_status_in_previous_turns(self, status, turns=1, player=None):
-        """
-        非常丑陋的设计
-        --------------
-        本来决定只让 team 来管理团队记忆，但是后来发现有些需要靠记忆进行决策的单人行为
-        也要通过团队通过信号进行触发，这实在是太麻烦、低效、且不直截了。玩家也应该拥有记忆。
-        因此这里就把 team 的一个关键的状态记忆查找函数代理到这里，用于玩家查找自己的记忆。
+    def has_status_in_previous_turns(self, status, turns=1):
+        return self._team.has_status_in_previous_turns(self, status, turns=turns)
 
-        但是这就导致设计上存在了上下互相依赖的糟糕设计，也就是 player 作为 team 的组成
-        他竟然代理了 team 的函数。
+    def has_status_recently(self, status, turns):
+        return self._team.has_status_recently(self, status, turns)
 
-        这一定程度上反映了这个架构仍然是存在很多设计不周的地方的
+    def get_previous_action(self, back=1):
+        return self._team.get_previous_action(self, back)
 
-        (2019.05.07)
-
-        """
-        if player is None: # 与 team 的函数不同，此处默认 player 为 self
-            player = self  # 如果需要设定为敌人，那么需要特别指定，不过可能是违背设计原则的行为
-        return self._team.has_status_in_previous_turns(player, status, turns=turns)
-
-    def get_previous_action(self, back=1, player=None):
-        if player is None:
-            player = self
-        return self._team.get_previous_action(player, back)
-
-    def get_previous_attacking_route(self, player=None):
-        if player is None:
-            player = self
+    def get_previous_attacking_route(self):
         return self._team.get_previous_attcking_route(self)
 
     def _is_safe_action(self, action):
@@ -515,7 +542,7 @@ class Tank2Player(Player):
                 returnSignal = Signal.INVALID
             action = res
 
-        self._decision = action # 缓存决策
+        self._currentDecision = action # 缓存决策
         return ( action, returnSignal )
 
 

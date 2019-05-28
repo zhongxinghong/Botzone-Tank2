@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-04 02:24:15
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 19:05:27
+# @Last Modified time: 2019-05-29 03:01:12
 """
 标记类
 
@@ -32,6 +32,7 @@ class Label(object, metaclass=UniqueIntEnumMeta):
     IMMEDIATELY_BREAK_OVERLAP_BY_MOVE     = 3  # 当敌人和我方坦克重叠时，对方立即与我打破重叠
     KEEP_ON_WITHDRAWING                   = 4  # 我方坦克持久化撤退状态
     DONT_WITHDRAW                         = 5  # 强制性要求一个队员不再防御
+    ALWAYS_BACK_AWAY                      = 6  # 我方坦克总是尝试回头
 
 
     __Status_Name_Cache = None

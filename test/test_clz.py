@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-30 03:30:54
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 08:25:58
+# @Last Modified time: 2019-05-27 19:21:12
 
 from typing import Iterable
 from contextlib import contextmanager
@@ -204,7 +204,8 @@ print("ok")
 @contextmanager
 def aa():
     try:
-        yield
+        a = {}
+        yield a
     except Exception as e:
         print(e)
         raise e

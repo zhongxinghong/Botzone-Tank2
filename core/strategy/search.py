@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 22:22:52
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 17:12:14
+# @Last Modified time: 2019-05-29 00:20:53
 """
 BFS 搜索最短路径的工具库
 
@@ -27,7 +27,7 @@ __all__ = [
 
 from ..const import DEBUG_MODE, MAP_WIDTH, MAP_HEIGHT
 from ..global_ import np, deque
-from ..utils import debug_print, debug_pprint
+from ..utils import memorize, debug_print, debug_pprint
 from ..field import Field, BASE_FIELD_TYPES, TANK_FIELD_TYPES
 from .route import Route, INFINITY_ROUTE_LENGTH, INFINITY_WEIGHT, DUMMY_ACTION,\
                     NONE_ACTION, MOVE_ACTION, SHOOT_ACTION, NONE_POINT
@@ -452,6 +452,7 @@ def _BFS_search_all_routes_for_shoot(start, end, map_matrix_T, move_weight_matri
         yield Route() # 空节点
 
 
+@memorize
 def find_all_routes_for_move(start, end, matrix_T,
                              block_types=DEFAULT_BLOCK_TYPES,
                              x_axis_first=False, middle_first=False):
@@ -478,6 +479,7 @@ def find_all_routes_for_move(start, end, matrix_T,
     yield from routes
 
 
+@memorize
 def find_all_routes_for_shoot(start, end, matrix_T,
                               block_types=DEFAULT_BLOCK_TYPES,
                               destroyable_types=DEFAULT_DESTROYABLE_TYPES,

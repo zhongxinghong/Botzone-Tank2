@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 18:05:23
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 23:25:27
+# @Last Modified time: 2019-05-29 04:07:25
 
 __all__ = [
 
@@ -210,10 +210,13 @@ class EncountEnemyDecision(SingleDecisionMaker):
                                         player.set_status(Status.KEEP_ON_MARCHING)
                                         return action
 
+
                         # 刚刚对射为两回合，该回合双方都没有炮弹，尝试打破僵局
                         #---------------------------------------------------
                         # 当前为侵略性的，并且在对方地盘，尝试回退一步，与对方重叠。
                         #   后退操作必须要有限制 5cd10315a51e681f0e900fa8
+                        #
+                        # 如果一直回头，尝试在这一步选择非回头的其他行为 5ced8eee641dd10fdcc7907f
                         #
                         if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=3)
                             and Action.is_stay(player.get_previous_action(back=2))    # 还需要检查两者上上回合是否为等待
@@ -221,11 +224,27 @@ class EncountEnemyDecision(SingleDecisionMaker):
                             and battler.is_in_enemy_site()         # 添加必须在对方地盘的限制，避免在我方地盘放人
                             and player.has_status(Status.AGGRESSIVE) # 只有侵略性的状态可以打破僵局
                             ):
+                            # 判断是否为反复回头
+                            if player.has_status_recently(Status.READY_TO_BACK_AWAY, turns=6): # 最近几回合内是否曾经回头过
+                                player.add_labels(Label.ALWAYS_BACK_AWAY)
+
+                            if (player.has_label(Label.ALWAYS_BACK_AWAY)
+                                and not battler.is_in_our_site(include_midline=True) # 严格不在我方基地
+                                ): # 考虑用闪避的方式代替后退
+                                for action in battler.try_dodge(oppBattler):
+                                    realAction = player.try_make_decision(action)
+                                    if Action.is_move(realAction):
+                                        player.set_status(Status.TRY_TO_BREAK_ALWAYS_BACK_AWAY)
+                                        player.remove_labels(Label.ALWAYS_BACK_AWAY) # 删掉这个状态
+                                        return realAction
+
+                            # 否则继续回头
                             backMoveAction = battler.back_away_from(oppBattler)
                             action = player.try_make_decision(backMoveAction)
                             if Action.is_move(action):
                                 player.set_status(Status.READY_TO_BACK_AWAY)
                                 return action
+
 
                         if (player.has_status_in_previous_turns(Status.OPPOSITE_SHOOTING_WITH_ENEMY, turns=1) # 上回合正在和对方对射
                             and not battler.canShoot    # 但是我方本回合不能射击
@@ -254,8 +273,10 @@ class EncountEnemyDecision(SingleDecisionMaker):
                                     player.set_status(Status.READY_TO_BLOCK_ROAD)
                                     return Action.STAY
                         # 其他情况均可以正常移动
-                        player.set_status(Status.KEEP_ON_MARCHING)
-                        return action
+                        #player.set_status(Status.KEEP_ON_MARCHING)
+                        #return action
+                        return # 直接抛出让后面的 decision 处理，当做没有这个敌人
+
                     #  不能移动，只好反击
                     action = player.try_make_decision(battler.shoot_to(oppBattler))
                     if Action.is_shoot(action):

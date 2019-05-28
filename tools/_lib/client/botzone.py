@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-28 02:23:29
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-23 20:16:31
+# @Last Modified time: 2019-05-26 23:57:30
 
 __all__ = [
 
@@ -28,7 +28,7 @@ _logger = ConsoleLogger("client.botzone")
 
 class BotzoneClient(BaseClient, CookiesManagerMixin, metaclass=Singleton):
 
-    USE_HTTP20 = True
+    USE_HTTP20 = False
     HOST = BOTZONE_URL_HOST
     HEADERS = {
         "User-Agent": USER_AGENT,

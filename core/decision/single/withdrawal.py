@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-24 10:29:31
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 22:35:51
+# @Last Modified time: 2019-05-29 00:55:48
 
 __all__ = [
 
@@ -251,8 +251,21 @@ class WithdrawalDecision(SingleDecisionMaker):
             player.add_labels(Label.KEEP_ON_WITHDRAWING) # 这个状态一旦出现，就添加标记
 
             #
+            # 不要轻易从中线撤退，应该想一下是否可以堵路
+            #
+            if battler.is_near_midline(offset=2): # y = [2, 6]
+                for action in [ Action.STAY ] + battler.get_all_valid_move_actions(): # 先判断 stay
+                    with map_.simulate_one_action(battler, action):
+                        if battler.can_block_this_enemy(oppBattler):
+                            player.set_status(Status.READY_TO_BLOCK_ROAD)
+                            return action  # 不需要判断安全性？
+
+            #
             # 1. 如果上回合已经到达基地附近，那么优先移动到基地对角线的位置等待
             # 2. 必要时改变守卫的位置
+            #
+            # TODO:
+            #   如果能直接到达守卫点，那应该考虑一下直接到达 ... 而不要先把基地的墙凿了
             #
             if battler.is_closest_to(base):
                 player.set_status(Status.GRARD_OUR_BASE)

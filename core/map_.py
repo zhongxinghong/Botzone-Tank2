@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 19:31:09
+# @Last Modified time: 2019-05-28 00:23:32
 """
 地图类
 """
@@ -384,6 +384,23 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         actions[tank.side][tank.id] = action
         self.perform(*actions)
 
+    def multi_simulate(self, *actions):
+        """
+        模拟一回合：
+            其中指定的多架坦克执行特定行为，其他 tank 均不动
+
+        模拟结束后，会自动回滚
+
+        Input:
+            - *args   格式为 ( (Tank, action), (Tank, action), ... ) Tank 对象要求包含 side/id 属性
+
+        """
+        performedActions = [
+            [Action.STAY for _ in range(TANKS_PER_SIDE) ] for __ in range(SIDE_COUNT)
+        ]
+        for tank, action in actions:
+            performedActions[tank.side][tank.id] = action
+        self.perform(*performedActions)
 
     def revert(self):
         """
@@ -457,6 +474,18 @@ class Tank2Map(Map, metaclass=SingletonMeta):
             #self._revertStack.pop()
             #debug_print("revert:", tank, action)
 
+    @contextmanager
+    def simulate_multi_actions(self, *actions):
+        """
+        multi_simulate 的 with 用法
+        """
+        try:
+            self.multi_simulate(*actions)
+            yield
+        except Exception as e:
+            raise e
+        finally:
+            self.revert()
 
     @contextmanager
     def rollback_to_previous(self):
@@ -481,7 +510,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         """
         自动实现多轮回滚
 
-        可以在 yield 后连续不定次调用 simulate 函数，模拟结束后自动调用 counter 次 revert
+        可以在 yield 后连续不定次调用 simulate/multi_simulate 函数，模拟结束后自动调用 counter 次 revert
         来自动多轮回滚
 
         yield 后可以通过调用 cnt.increase 来增加回滚次数

@@ -1,9 +1,9 @@
 {
     "game":
     {
-        "match_id": "5ceaaf6ed2337e01c7ae019a",
-        "side": 0,
-        "initial_turn": 10
+        "match_id": "5ced9956641dd10fdcc79afb",
+        "side": 1,
+        "initial_turn": 8
     },
 
     "environment":
