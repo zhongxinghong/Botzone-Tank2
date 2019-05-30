@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-24 10:29:31
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-29 00:55:48
+# @Last Modified time: 2019-05-29 18:23:12
 
 __all__ = [
 
@@ -62,6 +62,7 @@ class WithdrawalDecision(SingleDecisionMaker):
 
         return points
 
+
     def _get_more_dangerous_guard_point(self, oppBattler):
         """
         更加危险的防御点，被认为是距离敌人更近的防御点
@@ -73,61 +74,6 @@ class WithdrawalDecision(SingleDecisionMaker):
         distancesToEnemy = [ oppBattler.get_manhattan_distance_to_point(x2, y2)
                                 for (x2, y2) in _GUARD_POINTS ]
         return _GUARD_POINTS[ np.argmin(distancesToEnemy) ] # 距离敌人更近的点根据危险性
-
-    def _get_next_action_to_guard_point(self, x2, y2, oppBattler):
-        """
-        获得趋近守卫点 (x2, y2) 的下一个行为
-        """
-        player  = self._player
-        battler = player.battler
-        map_    = player._map
-        base    = map_.bases[battler.side]
-
-        route = battler.get_route_to_point_by_move(x2, y2)
-        assert not route.is_not_found() # 这个必定能找到路！
-
-        action = battler.get_next_defensive_action(route)
-        realAction = player.try_make_decision(action)
-
-        if not Action.is_stay(realAction):
-
-            if self._is_dangerous_action(realAction, oppBattler): # 风险行为
-                return Action.STAY
-
-            with map_.simulate_one_action(battler, realAction):
-                if not battler.is_closest_to(base):
-                    return Action.STAY  # 其实是可以确保一直停留在基地附近的？
-
-            '''if Action.is_shoot(realAction):
-                #
-                # 修改了路线选择方法后，下面的历史遗留代码就可以不要了
-                #
-                # destroyedFields = battler.get_destroyed_fields_if_shoot(realAction)
-                # if len(destroyedFields) == 0:
-                #     continue
-                # for field in destroyedFields:
-                #     if field is base: # 不能拆了自己家
-                #         continue
-                #     x1, y1 = field.xy
-                #     if np.abs(x1 - x2) <= 1 and np.abs(y1 - y2) <= 1:
-                #         return realAction
-                # else:
-                #     continue
-                return realAction
-            else:
-                # 否则就是移动了
-                #
-                with map_.simulate_one_action(battler, realAction):
-                    if not battler.is_closest_to(base):
-                       return Action.STAY # 其实是可以确保的？
-                if not self._is_dangerous_action(realAction, oppBattler):
-                    return realAction'''
-
-            return realAction
-
-
-        # 否则只能等待？
-        return Action.STAY
 
 
     def _is_dangerous_action(self, action, oppBattler):
@@ -181,6 +127,62 @@ class WithdrawalDecision(SingleDecisionMaker):
 
         # 其他情况均认为安全
         return False
+
+
+    def _try_make_decision(self, action, oppBattler):
+        """
+        Withdraw 下的 try_make_decision
+
+        """
+        player = self._player
+        Tank2Player = type(player)
+        oppPlayer = Tank2Player(oppBattler)
+        realAction = player.try_make_decision(action)
+
+        if (Action.is_stay(realAction)
+            and player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=2)
+            and player.has_status_in_previous_turns(Status.WAIT_FOR_WITHDRAWING, turns=2)
+            and not Action.is_shoot(oppPlayer.get_previous_action(back=1))
+            and not Action.is_shoot(oppPlayer.get_previous_action(back=2))
+            ): # 如果等待了两回合，对方两回合均为射击那么视为安全
+            player.set_status(Status.FORCED_WITHDRAW) # 糟糕的设计！如果后续需要更改，那么需要在再删掉这个状态
+            realAction = action
+
+        if (Action.is_stay(realAction)
+            and not player.has_status(Status.FORCED_WITHDRAW)
+            ):
+            return Action.STAY
+
+        if self._is_dangerous_action(realAction, oppBattler):
+            player.remove_status(Status.FORCED_WITHDRAW)
+            return Action.STAY
+
+        return realAction
+
+
+    def _get_next_action_to_guard_point(self, x2, y2, oppBattler):
+        """
+        获得趋近守卫点 (x2, y2) 的下一个行为
+        """
+        player  = self._player
+        battler = player.battler
+        map_    = player._map
+        base    = map_.bases[battler.side]
+
+        route = battler.get_route_to_point_by_move(x2, y2)
+        assert not route.is_not_found() # 这个必定能找到路！
+
+        action = battler.get_next_defensive_action(route)
+        realAction = self._try_make_decision(action, oppBattler)
+
+        if not Action.is_stay(realAction):
+            with map_.simulate_one_action(battler, realAction):
+                if not battler.is_closest_to(base):
+                    player.remove_status(Status.FORCED_WITHDRAW)
+                    return Action.STAY  # 其实是可以确保一直停留在基地附近的？
+
+        return realAction # stay/realAction
+
 
     def _make_decision(self):
 
@@ -251,7 +253,7 @@ class WithdrawalDecision(SingleDecisionMaker):
             player.add_labels(Label.KEEP_ON_WITHDRAWING) # 这个状态一旦出现，就添加标记
 
             #
-            # 不要轻易从中线撤退，应该想一下是否可以堵路
+            # (inserted) 不要轻易从中线撤退，应该想一下是否可以堵路
             #
             if battler.is_near_midline(offset=2): # y = [2, 6]
                 for action in [ Action.STAY ] + battler.get_all_valid_move_actions(): # 先判断 stay
@@ -270,6 +272,8 @@ class WithdrawalDecision(SingleDecisionMaker):
             if battler.is_closest_to(base):
                 player.set_status(Status.GRARD_OUR_BASE)
 
+                moreDangerousPoint = None
+                _shouldMoveToDangerousPoint = False
                 #
                 # 已到达基地附近，但是未到达守卫点，尝试移向守卫点
                 #
@@ -277,12 +281,7 @@ class WithdrawalDecision(SingleDecisionMaker):
                     and not player.has_status(Status.BLOCK_ROAD_FOR_OUR_BASE) # 高优先级触发
                     ):
                     moreDangerousPoint = self._get_more_dangerous_guard_point(oppBattler)
-                    action = self._get_next_action_to_guard_point(*moreDangerousPoint, oppBattler)
-                    if not Action.is_stay(action):
-                        player.set_status(Status.MOVE_TO_ANOTHER_GUARD_POINT)
-                    else:
-                        player.set_status(Status.STAY_FOR_GUARDING_OUR_BASE)
-                    return action
+                    _shouldMoveToDangerousPoint = True
 
 
                 #
@@ -292,13 +291,15 @@ class WithdrawalDecision(SingleDecisionMaker):
                     distancesToEnemy = [ oppBattler.get_manhattan_distance_to_point(x2, y2)
                                             for (x2, y2) in self._GUARD_POINTS ]
                     moreDangerousPoint = self._GUARD_POINTS[ np.argmin(distancesToEnemy) ] # 距离敌人更近的点根据危险性
-                    if moreDangerousPoint != battler.xy:
-                        action = self._get_next_action_to_guard_point(*moreDangerousPoint, oppBattler)
-                        if not Action.is_stay(action):
-                            player.set_status(Status.MOVE_TO_ANOTHER_GUARD_POINT)
-                        else:
-                            player.set_status(Status.STAY_FOR_GUARDING_OUR_BASE)
-                        return action
+                    _shouldMoveToDangerousPoint = True
+
+                if _shouldMoveToDangerousPoint:
+                    action = self._get_next_action_to_guard_point(*moreDangerousPoint, oppBattler)
+                    if not Action.is_stay(action):
+                        player.set_status(Status.MOVE_TO_ANOTHER_GUARD_POINT)
+                    else:
+                        player.set_status(Status.STAY_FOR_GUARDING_OUR_BASE)
+                    return action
 
                 player.set_status(Status.STAY_FOR_GUARDING_OUR_BASE) # 设置为等待
                 return Action.STAY # 其他情况下继续等待
@@ -327,24 +328,23 @@ class WithdrawalDecision(SingleDecisionMaker):
                                         key=lambda route: estimate_route_blocking(route) ): # 阻塞程度最小的优先
 
                     action = battler.get_next_defensive_action(route)
-                    realAction = player.try_make_decision(action)
 
-                    if Action.is_stay(realAction):
-                        if battler.is_closest_to(base):
-                            returnAction = realAction
-                            raise OUTER_BREAK
-                        else:
-                            continue  # 尽量找移动的行为
-                    else:
-                        returnAction = realAction
+                    if Action.is_stay(action) and battler.is_closest_to(base): # 到达基地就等待了
+                        returnAction = action
                         raise OUTER_BREAK
+
+                    realAction = self._try_make_decision(action, oppBattler)
+
+                    if Action.is_stay(realAction): # 尽量找一条不是停留的路？
+                        player.remove_status(Status.FORCED_WITHDRAW)
+                        continue
+
+                    returnAction = realAction
+                    raise OUTER_BREAK
 
             if not Action.is_valid(returnAction): # 没有一个合适的行为？
                 action = battler.get_next_defensive_action(_route1) # 那就随便来一个把 ...
-                returnAction = player.try_make_decision(action)
-
-            if self._is_dangerous_action(returnAction, oppBattler):
-                returnAction = Action.STAY
+                returnAction = self._try_make_decision(action, oppBattler)
 
             if Action.is_move(returnAction) or Action.is_shoot(returnAction):
                 player.set_status(Status.READY_TO_WITHDRAW)

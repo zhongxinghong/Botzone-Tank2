@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 17:03:07
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-26 19:17:28
+# @Last Modified time: 2019-05-29 18:48:29
 
 __all__ = [
 
@@ -225,28 +225,30 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                 #-------------------------------
                 # 如果可以，就移动过去
                 #
-                x1, y1 = battler.xy
-                for x3, y3 in battler.get_surrounding_empty_field_points():
+                for moveAction in battler.get_all_valid_move_actions():
+                    with map_.simulate_one_action(battler, moveAction):
+                        x3, y3 = battler.xy # 获得移动后的坐标
+
                     if (x3, y3) in enemyAttackRoute:
-                        moveAction = Action.get_move_action(x1, y1, x3, y3)
-                        assert map_.is_valid_move_action(battler, moveAction)
-                        willMove = False # 是否符合移动的条件
+                        _willMove = False # 是否符合移动的条件
+
                         realAction = player.try_make_decision(moveAction)
                         if Action.is_move(realAction):
-                            willMove = True
+                            _willMove = True
                         elif player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1): # 打破僵局
-                            oppPlayer = Tank2Player(player.get_risky_enemy())
-                            if (oppPlayer.battler.canShoot # 当回合可以射击
+                            oppBattler = player.get_risky_enemy()
+                            oppPlayer = Tank2Player(oppBattler)
+                            if (oppBattler.canShoot # 当回合可以射击
                                 and not oppPlayer.has_status_in_previous_turns(Status.RELOADING) # 上回合也可以射击
                                 ): # 说明敌人大概率不打算攻击我
-                                willMove = True
+                                _willMove = True
 
                         #
                         # 符合了移动的条件
                         # 但是还需要检查移动方向
                         # 不能向着远离敌人的方向移动，不然就会后退 ... 5cd33351a51e681f0e91da39
                         #
-                        if willMove:
+                        if _willMove:
                             distance1 = battler.get_manhattan_distance_to(oppBattler)
                             with map_.simulate_one_action(battler, moveAction):
                                 distance2 = battler.get_manhattan_distance_to(oppBattler)
@@ -280,44 +282,32 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                 #     不能被过掉的情况不准确！只有不再在同一直线的情况下才需要判断 5ce444a8d2337e01c7a5eaea
                 #     如果两者处在同一条直线，假如双方都射击，那么下一回合就直接相遇，并不会出现被对方过掉的情况
                 #
-                if not battler.on_the_same_line_with(oppBattler):
-                    if Action.is_shoot(realAction):
-                        fields = battler.get_destroyed_fields_if_shoot(realAction)
-                        if len(fields) == 1:
-                            field = fields[0]
-                            if isinstance(field, BrickField):
-                                enemyAttackRoute = oppBattler.get_shortest_attacking_route()
-                                if enemyAttackRoute.has_block(field): # 打掉的 Brick 在敌人进攻路线上
-                                    #
-                                    # 再尝试模拟，是否会导致上述情况
-                                    #
-                                    # TODO:
-                                    #   还需要分析敌人的行为!
-                                    #
-                                    _dontShoot = False
+                if (not battler.on_the_same_line_with(oppBattler)
+                    and Action.is_shoot(realAction)
+                    and battler.will_destroy_a_brick_if_shoot(realAction) # 下一步将会打掉一个墙
+                    ):
+                    field = battler.get_destroyed_fields_if_shoot(realAction)[0]
+                    enemyAttackRoute = oppBattler.get_shortest_attacking_route()
+                    if enemyAttackRoute.has_block(field): # 打掉的 Brick 在敌人进攻路线上
+                        #
+                        # 再尝试模拟，是否会导致上述情况
+                        #
+                        _dontShoot = False
+                        with outer_label() as OUTER_BREAK:
+                            for enemyMoveAction in oppBattler.get_all_valid_actions():
+                                # 一回合假设我方射击，敌人任意行为
+                                with map_.simulate_multi_actions((battler, realAction), (oppBattler, enemyMoveAction)):
+                                    moveAction = realAction - 4
+                                    # 二回合假设我方移动，敌人射击
+                                    for enemyShootAction in oppBattler.get_all_valid_shoot_actions(): # 自动判断是否可射击
+                                        with map_.simulate_multi_actions((battler, moveAction), (oppBattler, enemyShootAction)):
+                                            if battler.destroyed: # 然后这回合我方坦克挂了
+                                                _dontShoot = True
+                                                raise OUTER_BREAK
 
-                                    with map_.simulate_one_action(battler, realAction):
-                                        moveAction = realAction - 4
-                                        with map_.simulate_one_action(battler, moveAction): # 再走一步
-                                            # 敌方模拟两步
-                                            with outer_label() as OUTER_BREAK:
-                                                for action in oppBattler.get_all_valid_actions():
-                                                    with map_.simulate_one_action(oppBattler, action):
-                                                        for action in oppBattler.get_all_valid_actions():
-                                                            with map_.simulate_one_action(oppBattler, action):
-
-                                                                if battler.destroyed:
-                                                                    _dontShoot = True
-                                                                else:
-                                                                    for enemy in oppBattler.get_enemies_around():
-                                                                        if enemy is tank:
-                                                                            _dontShoot = True
-                                                                if _dontShoot:
-                                                                    raise OUTER_BREAK
-
-                                    if _dontShoot:
-                                        player.set_status(Status.ACTIVE_DEFENSIVE)
-                                        return player.try_make_decision(moveAction) # 移动/停止
+                        if _dontShoot:
+                            player.set_status(Status.ACTIVE_DEFENSIVE)
+                            return player.try_make_decision(moveAction) # 移动/停止
 
                 # 否则直接采用主动防御的进攻策略
                 #
@@ -341,10 +331,7 @@ class ActiveDefenseDecision(SingleDecisionMaker):
                         #
                         # 敌人下一步可能移到墙后面
                         #
-                        x1, y1 = oppBattler.xy
-                        for x2, y2 in oppBattler.get_surrounding_empty_field_points():
-                            moveAction = Action.get_move_action(x1, y1, x2, y2)
-                            assert map_.is_valid_move_action(oppBattler, moveAction)
+                        for moveAction in oppBattler.get_all_valid_move_actions():
                             with map_.simulate_one_action(oppBattler, moveAction):
                                 if battler.get_enemy_behind_brick(realAction, interval=-1) is not None: # 此时如果直接出现在墙的后面
                                     player.set_status(Status.ACTIVE_DEFENSIVE)

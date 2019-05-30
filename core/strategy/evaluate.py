@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-29 23:02:34
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-28 16:10:43
+# @Last Modified time: 2019-05-29 18:52:42
 """
 状况评估
 """
@@ -70,14 +70,17 @@ def evaluate_aggressive(battler, oppBattler, strict=False, allow_withdraw=True):
         else:
             status = Status.STALEMENT
 
-    else: # 在我方半边地盘，会增加防御的可能性
-
+    else:
+        #
+        # 在我方半边地盘，会增加防御的可能性
+        # 差一步都要算作防御！
+        #
         if leadingLength >= 1:
             status = Status.AGGRESSIVE # [1, +)
-        elif -1 <= leadingLength < 1:
-            status = Status.STALEMENT  # [-1, 1)
-        elif -2 <= leadingLength < -1:
-            status = Status.DEFENSIVE  # [-2, -1)
+        elif -1 < leadingLength < 1:
+            status = Status.STALEMENT  # (-1, 1) -> 0
+        elif -2 <= leadingLength <= -1:
+            status = Status.DEFENSIVE  # [-2, -1]
         else:
             if allow_withdraw and battler.is_in_our_site(include_midline=True): # 包含中线，放松一点条件
                 status = Status.WITHDRAW   # (-, -2)

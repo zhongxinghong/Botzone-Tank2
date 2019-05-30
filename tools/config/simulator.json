@@ -1,9 +1,9 @@
 {
     "game":
     {
-        "match_id": "5ced9956641dd10fdcc79afb",
-        "side": 1,
-        "initial_turn": 8
+        "match_id": "5cee87fc641dd10fdcc91b44",
+        "side": 0,
+        "initial_turn": 10
     },
 
     "environment":
@@ -21,7 +21,7 @@
     "simulator":
     {
         "pause": true,
-        "turn_interval": 0.3,
+        "turn_interval": 0.05,
         "print": true,
         "hide_data": true
     }

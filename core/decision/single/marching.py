@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-05-15 16:16:03
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-29 04:10:11
+# @Last Modified time: 2019-05-29 20:48:59
 
 __all__ = [
 
@@ -121,6 +121,19 @@ class MarchingDecision(SingleDecisionMaker):
 
         route = None # 这回合的进攻路线
         returnAction = Action.STAY # 将会返回的行为，默认为 STAY
+
+        #
+        # 对于最优方案的缓存，用于判断次优行为是否合理
+        # 没事老回头实在是太蠢了！ 5cee6790641dd10fdcc8de2c
+        # 有路也不是这样走啊！
+        #
+        _firstAttackAction = None         # 第一条路线给出的进攻行为
+        _firstRealAction = None           # 第一条路线下玩家真实决策的而行为
+        _firstPreventBeingKilled = False  # 第一个进攻行为是否因为受到敌人拦截而受阻
+        _firstStatus = None               # 缓存第一次决策时的状态
+        _isFirstRoute = False             # 当前是否为第一条路径
+        _firstRoute = None                # 缓存第一条路径
+
         with outer_label() as OUTER_BREAK:
             #
             # TODO:
@@ -132,19 +145,36 @@ class MarchingDecision(SingleDecisionMaker):
             #                 battler.get_all_shortest_attacking_routes(delay=allowedDelay), player ):
             # for route in sorted( battler.get_all_shortest_attacking_routes(delay=allowedDelay, middle_first=isMiddleFirst, x_axis_first=isXAxisFirst),
             #                         key=lambda r: estimate_enemy_effect_on_route(r, player) ):
-            for route in routes:
+            _cachedAttackActions = set() # 缓存已经考虑过的结果
+            for _idx, route in enumerate(routes): # 引入 idx 用于判断是第几个路线
                 # 首先清除可能出现的状态，也就是导致 stay 的状况 ？？？？？
+                _isFirstRoute = ( _idx == 0 )
+
+                if _idx == 1: # 恰好过了第二回合
+                    _firstStatus = player.get_status().copy() # 确保所有 continue 语句设置的 status 都可以在这里被捕获
+
                 player.remove_status(Status.WAIT_FOR_MARCHING,
                                      Status.PREVENT_BEING_KILLED,
                                      Status.HAS_ENEMY_BEHIND_BRICK)
 
                 attackAction = battler.get_next_attacking_action(route)
 
+                if _isFirstRoute: # 缓存行为和路线
+                    _firstAttackAction = attackAction
+                    _firstRoute = route
+
+                if attackAction in _cachedAttackActions: # 缓存攻击行为，避免重复判断
+                    continue
+                _cachedAttackActions.add(attackAction)
+
                 if Action.is_stay(attackAction): # 下一步是停留，就没必要过多判断了
                     returnAction = attackAction
                     raise OUTER_BREAK
 
                 realAction = player.try_make_decision(attackAction)
+
+                if _isFirstRoute: # 缓存真实判断
+                    _firstRealAction = realAction
 
                 # debug_print(player, attackAction, realAction)
 
@@ -165,7 +195,7 @@ class MarchingDecision(SingleDecisionMaker):
                         if (player.has_status_in_previous_turns(Status.WAIT_FOR_MARCHING, turns=1)
                             and player.has_status_in_previous_turns(Status.PREVENT_BEING_KILLED, turns=1)
                             ): # 即将停留第二回合
-                            riskyBattler = BattleTank(player.get_risky_enemy())
+                            riskyBattler = player.get_risky_enemy()
                             riskyPlayer = Tank2Player(riskyBattler)
                             #
                             # 判断敌人不会攻击我的标准
@@ -185,6 +215,8 @@ class MarchingDecision(SingleDecisionMaker):
                                 if (Action.is_move(riskyPlayer.get_previous_action(back=1))
                                     and battler.get_manhattan_distance_to(riskyBattler) == 2
                                     ): # 这种情况对应着对方刚刚到达拐角处，这种情况是有危险性的，因此再停留一回合 5cd4045c86d50d05a00840e1
+                                    player.set_status(Status.WAIT_FOR_MARCHING)
+                                    player.set_status(Status.PREVENT_BEING_KILLED)
                                     pass
                                 else:
                                     # TODO:
@@ -289,11 +321,17 @@ class MarchingDecision(SingleDecisionMaker):
                                         raise OUTER_BREAK
 
 
+                    #
                     # 否则停止不前
                     # 此时必定有 riskyEnemy
                     #
                     player.set_status(Status.WAIT_FOR_MARCHING) # 可能触发 Signal.PREPARE_FOR_BREAK_BRICK 和 Signal.FORCED_MARCH
                     player.set_status(Status.PREVENT_BEING_KILLED) # TODO: 这个状态是普适性的，希望在上面的各种情况中都能补全
+
+                    if _isFirstRoute:
+                        _firstPreventBeingKilled = True # 缓存状态，仅仅在因为防止被杀而停留的状态下缓存，其他情况不算
+                        _firstStatus = player.get_status().copy() # 结束时常规地要复制一次，避免没有第二条路的情况
+
                     returnAction = Action.STAY
                     continue # 停留动作，尝试继续寻找
 
@@ -541,20 +579,13 @@ class MarchingDecision(SingleDecisionMaker):
                         returnAction = Action.STAY
                         continue
 
-                    #
-                    # TODO:
-                    #----------------
-                    # 不要老是随便回头！这实在是太蠢了 5ced7a13641dd10fdcc7722b
-                    # 有路也不是这么走啊 ...
-                    #
-
-
                 #
                 # (inserted) 打破老是回头的僵局
                 #
                 # 尝试向着两边闪避 5ced9540641dd10fdcc79752
                 #
-                if (player.has_label(Label.ALWAYS_BACK_AWAY)
+                if (oppBattler is not None # 好吧 ... 不加这个可能过不了自动测试 -> TODO: 也许我们不应该再替对方决策一遍？
+                    and player.has_label(Label.ALWAYS_BACK_AWAY)
                     and not battler.is_in_our_site(include_midline=True) # 限制为严格地不在我方基地
                     ):
                     for action in battler.try_dodge(oppBattler):
@@ -575,12 +606,38 @@ class MarchingDecision(SingleDecisionMaker):
 
         player.set_current_attacking_route(route) # 缓存攻击路线
 
+        #
+        # 现在判断是否是第一条路线，并考虑它的合理性！
+        #
+        # 乱回头实在是太蠢了！ 5cee6727641dd10fdcc8dd96 -> 5cee6e3d641dd10fdcc8e8cf
+        #
+        if (not _isFirstRoute # 选的是非第一条路线
+            and _firstPreventBeingKilled # 不选一条的原因是为了防止被杀
+            and Action.is_move(realAction) # 这条路线给出的行为是移动
+            and Action.is_move(_firstAttackAction) # 第一个进攻路线也是移动
+            and Action.is_opposite(realAction, _firstAttackAction) # 于是这条路线给出的移动方向是远离进攻路线的方向！
+            ): # 这种情况下应该停下来！
+            returnAction = Action.STAY
+            player.remove_status(Status.KEEP_ON_MARCHING)
+            player.set_status(*_firstStatus)
+            player.set_current_attacking_route(_firstRoute)
+
         # 找到一个侵略性的行为
         if not Action.is_stay(returnAction):
             return returnAction
 
+
+        #
         # 否则返回 STAY
-        player.set_status(Status.WAIT_FOR_MARCHING)
+        # 此处查找是否和第一条路线的决策结果一致，如果一致，那么就将第一次决策下的各种状态还原
+        #
+        if (_firstRealAction is not None
+            and Action.is_stay(_firstRealAction)
+            ):
+            if _firstStatus is not None:
+                player.set_status(*_firstStatus)
+            player.set_current_attacking_route(_firstRoute)
+
         return Action.STAY
 
 

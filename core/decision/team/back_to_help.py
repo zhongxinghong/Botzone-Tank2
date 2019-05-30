@@ -2,7 +2,7 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-27 20:28:20
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-27 22:55:01
+# @Last Modified time: 2019-05-29 21:31:02
 
 __all__ = [
 
@@ -11,6 +11,7 @@ __all__ = [
     ]
 
 from ..abstract import TeamDecisionMaker
+from ...utils import debug_print
 from ...strategy.status import Status
 from ...strategy.signal import Signal
 
@@ -51,6 +52,8 @@ class BackToHelpTeamDecision(TeamDecisionMaker):
                 ):
                 battler = player.battler
                 oppBattler = player.get_risky_enemy()
+                if oppBattler is None: # 5cee87fc641dd10fdcc91b44 为何空指针 ???
+                    continue
                 oppPlayer = Tank2Player(oppBattler)
                 teammateRiskyEnemyTank = oppPlayer.teammate.tank # 当前和我墙后僵持的敌人的队友
                 if oppBattler is not None and teammateRiskyEnemyTank is not None: # 应该不会这样？
@@ -58,7 +61,7 @@ class BackToHelpTeamDecision(TeamDecisionMaker):
                     _shouldBackAway = False
                     with map_.auto_revert() as counter:
                         while map_.is_valid_move_action(battler, backAwayAction):
-                            map_.simulate(battler, backAwayAction)
+                            map_.single_simulate(battler, backAwayAction)
                             counter.increase()
                             if teammateRiskyEnemyTank in battler.get_enemies_around():
                                 _shouldBackAway = True

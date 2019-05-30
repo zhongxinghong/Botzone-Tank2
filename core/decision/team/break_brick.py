@@ -2,7 +2,7 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-27 20:04:13
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-27 22:55:19
+# @Last Modified time: 2019-05-29 20:16:47
 
 __all__ = [
 
@@ -76,7 +76,7 @@ class BreakBrickTeamDecision(TeamDecisionMaker):
                         _shouldBreakBrick = False
 
 
-                        if oppPlayer.has_status(Status.ENCOUNT_ENEMY): # 发现敌人和队友相遇，立即破墙
+                        if oppBattler.has_enemy_around(): # 发现敌人和队友相遇，立即破墙
                             _shouldBreakBrick = True
 
                         ''' 这个两个触发已经不再需要了 5ce217e8d2337e01c7a3790c

@@ -2,7 +2,7 @@
 # @Author: Administrator
 # @Date:   2019-04-24 23:48:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-28 00:23:32
+# @Last Modified time: 2019-05-29 18:41:17
 """
 地图类
 """
@@ -366,7 +366,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         #self.debug_print_out()
 
 
-    def simulate(self, tank, action):
+    def single_simulate(self, tank, action):
         """
         模拟一回合：
             其中一架 tank 执行一个特定行为，其他 tank 均不动
@@ -460,7 +460,7 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         simulate 的 with 版用法，结束后会自动回滚
         """
         try:
-            self.simulate(tank, action)
+            self.single_simulate(tank, action)
             #debug_print("simulate:", tank, action)
             #self._revertIdx += 1
             #self._revertStack.append( (self._revertIdx, tank, action) )
@@ -510,8 +510,8 @@ class Tank2Map(Map, metaclass=SingletonMeta):
         """
         自动实现多轮回滚
 
-        可以在 yield 后连续不定次调用 simulate/multi_simulate 函数，模拟结束后自动调用 counter 次 revert
-        来自动多轮回滚
+        可以在 yield 后连续不定次调用 single_simulate/multi_simulate 函数，
+        模拟结束后自动调用 counter 次 revert 来自动多轮回滚
 
         yield 后可以通过调用 cnt.increase 来增加回滚次数
 

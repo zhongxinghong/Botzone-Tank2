@@ -2,7 +2,7 @@
 # @Author: zhongxinghong
 # @Date:   2019-05-27 19:49:49
 # @Last Modified by:   Administrator
-# @Last Modified time: 2019-05-27 22:54:52
+# @Last Modified time: 2019-05-29 16:45:29
 
 __all__ = [
 
@@ -123,6 +123,7 @@ class ForcedAttackTeamDecision(TeamDecisionMaker):
                             if signal3 == Signal.READY_TO_FORCED_MARCH:
                                 returnActions[player.id] = action3
                                 player.set_team_decision(action3)
+                                player.set_status(Status.FORCED_MARCHING)
                                 manager.discard_snapshot()
 
         return returnActions
