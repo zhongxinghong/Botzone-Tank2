@@ -1,4 +1,4 @@
-numpy==1.15.1
+numpy==1.22.0
 requests==2.6.0
 hyper==0.7.0
 APScheduler==3.6.0
